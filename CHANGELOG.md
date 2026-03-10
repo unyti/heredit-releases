@@ -1,3 +1,10 @@
+## v3.10.12 — 2026-03-10
+
+### Corrections
+- **Sparkline 1J — données horaires réelles** — robustesse du fetch intraday améliorée : fallback automatique sur `query2.finance.yahoo.com` si `query1` échoue, ajout du cours actuel comme dernier point garanti, logs console pour diagnostiquer les échecs. La courbe 1J affiche désormais les points horaires réels au lieu de se rabattre sur le fallback 2 points (clôture veille → cours actuel)
+
+---
+
 ## v3.10.11 — 2026-03-10
 
 ### Amélioration
