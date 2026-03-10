@@ -1,3 +1,18 @@
+## v3.10.9 — 2026-03-10
+
+### Nouvelles fonctionnalités
+
+- **Feedback intégré** — section dans Paramètres (remplace Accessibilité) : type (💡 Suggestion / 🐛 Bug / 💬 Autre), message, captcha mathématique anti-robot. Envoi par email via `nodemailer` (config dans `feedback-config.json`). Réinitialisation automatique du formulaire après envoi.
+
+- **Sparklines synchronisées avec la période P&L** — les graphiques des cartes investissement s'adaptent au filtre actif :
+  - `1J` — 2 points : prevClose → cours actuel
+  - `Jan.` (YTD) — points bi-mensuels (1er et 15) si avant juillet, mensuels sinon
+  - `1A` — 12 points mensuels
+  - `Tout` — depuis la date d'achat (max 24 mois)
+  - Label dynamique sous chaque graphique (`1 jour`, `Depuis jan.`, `12 mois`, `Depuis achat`)
+
+---
+
 ## v3.10.8 — 2026-03-10
 
 ### Correction
