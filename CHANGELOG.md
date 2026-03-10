@@ -1,3 +1,19 @@
+## v3.10.11 — 2026-03-10
+
+### Amélioration
+- **Sparkline 1J — points horaires** — jusqu'à 24 points de cours (interval=1h) au lieu de 2 points (prevClose → actuel). Données chargées à la demande via Yahoo Finance lors du passage en mode 1J, cachées 5 min en mémoire. Tooltip affiche l'heure (ex: `09:00`, `10:00`…). Fallback sur 2 points si les données intraday sont indisponibles.
+
+---
+
+## v3.10.10 — 2026-03-10
+
+### Corrections
+- **Sparkline 1J — seuil flat** — seuil de détection "pas de variation" abaissé à 0,01% pour la période 1J (au lieu de 0,5%), pour afficher les variations intraday même faibles (ex: TTE −0,09%)
+- **feedback-config.json** — déplacé dans `%APPDATA%\Heredit\` (jamais écrasé par les mises à jour). Migration automatique au premier lancement si le fichier existe déjà dans le dossier app
+- **preload.js** — correction d'une corruption sur la clé `checkUpdate` qui cassait le chargement de l'application
+
+---
+
 ## v3.10.9 — 2026-03-10
 
 ### Nouvelles fonctionnalités
