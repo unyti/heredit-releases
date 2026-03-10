@@ -1,3 +1,10 @@
+## v3.10.8 — 2026-03-10
+
+### Correction
+- **Tri investissements — persistance** — le tri par Montant, P&L ou Nom n'était pas correctement restauré au redémarrage : `isFreshPage` était `false` (catégories déjà peuplées par `boot()`) et le DOM revenait à `'date'` par défaut. Désormais `invFilters.sort` est toujours prioritaire sur la valeur HTML du select.
+
+---
+
 ## v3.10.7 — 2026-03-10
 
 ### Améliorations
