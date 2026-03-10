@@ -1,3 +1,10 @@
+## v3.10.13 — 2026-03-10
+
+### Amélioration
+- **Résumé catégorie dans les investissements** — quand on filtre par catégorie ou sous-catégorie (via la sidebar ou le menu), une barre de synthèse apparaît au-dessus de la liste : nom de la catégorie, valeur totale, capital investi, P&L et son % (calculés sur la période P&L active). Disparaît automatiquement quand aucun filtre n'est actif.
+
+---
+
 ## v3.10.12 — 2026-03-10
 
 ### Corrections
