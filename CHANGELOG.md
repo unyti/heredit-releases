@@ -1,3 +1,10 @@
+## v3.10.21 — 2026-03-11
+
+### Correction
+- **Sparkline 1J — dernier point toujours synchronisé** — au lieu de tenter de patcher le cache intraday après coup (race condition entre les renders internes de refreshAllTickers et les await), le dernier point est maintenant forcé directement dans computeInvSparklineForPeriod : quelle que soit la valeur stockée dans le cache Yahoo, le point final de la courbe est toujours prixUnitaire × quantite. Aucune désynchronisation possible même si plusieurs renders se produisent pendant le refresh.
+
+---
+
 ## v3.10.20 — 2026-03-11
 
 ### Correction
