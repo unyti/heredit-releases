@@ -1,3 +1,18 @@
+## v3.10.22 — 2026-03-11
+
+### Corrections (3 bugs)
+
+**Feedback — fonctionne maintenant sur tous les PC**
+La logique de migration copiait le template placeholder (votre@email.com) vers %APPDATA% sur les autres PC, puis nodemailer échouait avec ces faux credentials. Nouveau fonctionnement : les vrais credentials SMTP sont bundlés directement dans le package (feedback-config.json). Tous les utilisateurs les utilisent automatiquement. Le fichier userData sert uniquement de surcharge locale pour le développeur.
+
+**P&L 1 mois — calcul corrigé**
+Triple bug : getPeriodStart() retournait null pour '1m', PERIOD_RANGE_MAP n'avait pas '1m', et refreshPeriodPrices ne fetchait que ytd et 1y. Les trois sont corrigés : la date de début est maintenant calculée (aujourd'hui - 1 mois), Yahoo est appelé avec range=1mo, et le cache est rempli pour '1m'. Banque, Crowdfunding, Actions et fonds affichent maintenant le bon P&L mensuel.
+
+**Sparkline 1J — axe X mis à jour après Actualiser**
+Plusieurs appels renderInv() internes à refreshAllTickers() consommaient les data-spark-pts attributes (les rendant une fois avec le cache vide), avant que le cache intraday soit rechargé. Après loadIntradayForAllTickers(), on redessine maintenant les SVGs directement en-place sur les cartes existantes (buildSparklineSVGInto sur le SVG visible), sans passer par renderInv(). Les dimensions clientWidth sont déjà connues, pas de race condition possible.
+
+---
+
 ## v3.10.21 — 2026-03-11
 
 ### Correction
