@@ -1,3 +1,57 @@
+## v3.10.20 — 2026-03-11
+
+### Correction
+- **Refresh 1J — dernier point sparkline synchronisé** — après actualisation en mode 1J, le point "Maintenant" du cache intraday est mis à jour avec `prixUnitaire` (source de vérité de `fetchTickerPrice`), qui peut différer légèrement de `meta.regularMarketPrice` de Yahoo Finance. La courbe affiche maintenant exactement la même valeur que celle affichée sur la carte.
+
+---
+
+## v3.10.19 — 2026-03-11
+
+### Correction
+- **Refresh → sparkline maintenant à jour** — le bouton "↻ Cours" vide maintenant le `tickerHistoryCache` (TTL 1h) avant de recharger, forçant la récupération des nouvelles données mensuelles. Sans ça, les sparklines 1A/Tout continuaient d'utiliser l'ancienne valeur cached même après un refresh. Un second passage de `renderAllSparklines` est déclenché 50ms après pour couvrir les SVGs dont le layout se stabilise tardivement.
+
+---
+
+## v3.10.18 — 2026-03-11
+
+### Correction
+- **Axe X sparkline 1A/Tout — vraiment équidistant** — les 6 labels sont maintenant placés à des positions SVG uniformes (PAD.l + k/5 × cW), puis le label du point de données le plus proche est utilisé. Cela garantit un espacement visuel parfait quelle que soit la densité de points (13 pts pour 1A, jusqu'à 25 pour Tout), contrairement à l'ancienne méthode par indices qui créait des écarts irréguliers à cause des arrondis.
+
+---
+
+## v3.10.17 — 2026-03-11
+
+### Amélioration
+- **Axe X sparkline — 6 labels équidistants** — les points sont calculés uniformément sur toute la largeur (k/5 × n-1), avec déduplication des labels identiques.
+- **Hover tooltip — fond opaque** — un rectangle `var(--bg2)` avec bordure et coins arrondis apparaît derrière le label valeur/heure, pour rester lisible même quand la courbe passe dessous. La largeur s'adapte à la longueur du texte.
+
+---
+
+## v3.10.16 — 2026-03-11
+
+### Corrections
+- **Axe Y sparkline — précision adaptative** — l'étiquette de prix s'adapte désormais au pas entre niveaux (pas à la valeur absolue). Si tous les points sont autour de 3 000 € avec une variation de 50 €, l'axe affiche `3 000`, `3 013`, `3 025`... au lieu de `3k` en boucle. Échelle : 4 décimales pour les micro-variations, jusqu'au format `1.5k` pour les grands montants.
+- **Axe X sparkline — 5 points + déduplication** — jusqu'à 5 labels répartis uniformément. Les doublons (même texte) sont automatiquement supprimés, ce qui évite l'effet répétitif sur les courbes à faible granularité temporelle.
+
+---
+
+## v3.10.15 — 2026-03-11
+
+### Amélioration
+- **Graphique sparkline — refonte complète** — rendu 2-passes (SVG rempli après layout DOM pour éviter la distorsion du texte avec preserveAspectRatio). Style aligné sur le graphique patrimoine : grille en tirets `var(--border)`, texte `var(--muted2)` font-size 10, `fmtK` pour les prix. Axes Y : 5 niveaux au lieu de 3. Labels X allégés, espace gauche optimisé (PAD.l 44→36).
+- **Hover amélioré** — ligne verticale + cercle animé + valeur affichée directement sur le graphique SVG (label heure · prix), positionné intelligemment selon la position de la souris.
+- **"Clôture veille" → "Veille"** — label raccourci sur l'axe X du mode 1J.
+
+---
+
+## v3.10.14 — 2026-03-11
+
+### Amélioration
+- **Graphique sparkline amélioré** — hauteur doublée (46px → 90px), grille horizontale semi-transparente (5 lignes), labels Y (prix min/mid/max) en axe gauche, labels X (dates/heures) en axe bas, point final mis en valeur. S'applique à tous les modes (1J, Jan., 1A, Tout).
+- **Refresh → graphique 1J mis à jour** — le bouton "↻ Cours" vide maintenant le cache intraday et recharge les données horaires si le mode 1J est actif, puis rafraîchit l'affichage. Le nouveau point apparaît immédiatement sans changer de filtre.
+
+---
+
 ## v3.10.13 — 2026-03-10
 
 ### Amélioration
