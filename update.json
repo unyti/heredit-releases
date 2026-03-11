@@ -1,9 +1,9 @@
 {
-  "version": "3.10.20",
+  "version": "3.10.21",
   "notes": "",
   "date": "2026-03-11",
   "files": {
-    "installer": "https://github.com/unyti/heredit-releases/releases/download/3.10.20/Heredit.Setup.3.10.20.exe",
-    "portable": "https://github.com/unyti/heredit-releases/releases/download/3.10.20/Heredit-portable.exe"
+    "installer": "https://github.com/unyti/heredit-releases/releases/download/3.10.21/Heredit.Setup.3.10.21.exe",
+    "portable": "https://github.com/unyti/heredit-releases/releases/download/3.10.21/Heredit-portable.exe"
   }
 }
