@@ -1,3 +1,10 @@
+## v3.10.23 — 2026-03-11
+
+### Correction
+- **Sparkline 1J — refresh auto ET bouton actualisent maintenant le graphique** — la vraie cause racine : le reload de l'intraday et le redraw des SVGs n'étaient faits que dans manualRefreshTickers, pas dans refreshAllTickers que le timer automatique appelle directement. Maintenant : refreshAllTickers expire lui-même les entrées _intradayCache (ts=0) et appelle loadIntradayForAllTickers() en mode 1J, puis redessine les SVGs en-place après 50ms (une fois le layout stabilisé). manualRefreshTickers se contente de vider les caches et déléguer — plus de logique dupliquée.
+
+---
+
 ## v3.10.22 — 2026-03-11
 
 ### Corrections (3 bugs)
