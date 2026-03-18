@@ -1,3 +1,66 @@
+## v3.10.26 — 2026-03-18
+
+### Correction
+- **Capital/Valeur frais — fix complet** — la cause racine : saveInv stocke inv.valeur = montant (1 000 €) quand aucune valeur n'est saisie. computeStats lisait inv.valeur > 0 et renvoyait 1 000 € sans jamais déduire les frais. Fix : inv.valeur est maintenant ignoré dans le chemin sans mouvements/rendement — seuls les snapshots utilisateur explicites font référence. Sans snapshot, valeur = max(0, montant - fraisAchat). Résultat : 1 000 € investi avec 5 € de frais → Capital = 1 000 €, Valeur = 995 €, P&L = −5 €.
+
+---
+
+## v3.10.25 — 2026-03-18
+
+### Corrections
+
+**Fix 8 affiné — capital = montant, valeur = montant − frais**
+Comportement final : pour 1 000 € investi avec 7.50 € de frais → Capital = 1 000 €, Valeur actuelle initiale = 992.50 €, P&L = −7.50 €. Tous les chemins de computeStats sont cohérents (sans mouvements, sans rendement, avec événements). Le fix 10 (taux livret auto) n'existait pas dans cette version — annulation sans effet.
+
+---
+
+## v3.10.25 — 2026-03-18
+
+### Corrections
+- **Livret A taux auto — annulé** — fonctionnalité retirée à la demande.
+- **Capital / Valeur actuelle avec frais — logique corrigée** — Pour 1 000 € investi avec 7.50 € de frais : capital investi = 1 000 € (montant engagé), valeur actuelle initiale = 992.50 € (montant net après frais). Le P&L de départ est donc −7.50 €. Précédemment, les frais s'ajoutaient au capital (doublon avec le montant).
+
+---
+
+## v3.10.24 — 2026-03-18
+
+### Corrections & améliorations (11 points)
+
+**Feedback SMTP — message d'erreur clair (main.js)**
+L'erreur 535 Gmail est maintenant expliquée explicitement : Gmail exige un mot de passe d'application (16 caractères, généré sur myaccount.google.com → Sécurité), pas le mot de passe du compte. Le message guide directement vers la solution.
+
+**Sidebar petites résolutions — scroll activé**
+Le bloc bas de sidebar (slider marchés, Aide, Paramètres) était inaccessible sur les petites résolutions car flex-shrink:0 sans overflow. Ajout de max-height:55vh + overflow-y:auto sur .sidebar-bottom.
+
+**Menu trois points — clamp horizontal**
+La popup s'ouvrait hors-écran sur les petites résolutions. La position horizontale est maintenant clampée : left = max(6, min(rect.right - menuW, innerWidth - menuW - 6)).
+
+**Modal — fermeture accidentelle**
+Ajout de onmousedown stopPropagation sur la modale pour éviter que des clics dans les inputs ferment la fenêtre lors d'un relâché sur l'overlay.
+
+**Colonne Catégorie supprimée en vue tableau**
+La colonne était redondante avec le groupement par catégorie déjà visible dans la vue cartes. Header + cellule supprimés.
+
+**TRI — arrondi adaptatif**
+fmtTRI affiche maintenant 1 décimale si |TRI| < 10% (ex: 1.5%/an), 0 décimale au-delà. Fin du 1.52% non significatif.
+
+**ISIN / Ticker — limite maxlength 12 → 40**
+Les tickers Yahoo (ex: IWDA.AS, MC.PA) et noms de produits dépassent 12 caractères. Limite portée à 40.
+
+**Frais à l'achat — dropdown €/%**
+Nouveau toggle €/% à côté du champ. En mode %, Heredit calcule automatiquement le montant en euros (montant × taux) affiché en preview temps réel. Toujours stocké en euros dans la base.
+
+**Capital = montant − frais (pas montant + frais)**
+Correction logique : capital investi = montant initial − frais d'entrée. Exemple : 1 000 € investi avec 7.5 € de frais → capitalNet = 992.50 €, P&L = valeur actuelle − 992.50 €.
+
+**Frais — 2 décimales dans l'affichage**
+fmt(fraisAchat, 2) au lieu de fmt(fraisAchat) pour afficher 7.50 € au lieu de 8 €.
+
+**Taux livret A — récupération automatique**
+Tentative de récupération via API publique au démarrage. Fallback codé en dur si indisponible : Livret A 3.0%, LDDS 3.0%, LEP 4.0%, PEL 2.25%, CEL 2.0%. Le champ Rendement se pré-remplit automatiquement quand la catégorie est un livret et que le nom correspond (Livret A, LDDS, LEP…).
+
+---
+
 ## v3.10.23 — 2026-03-11
 
 ### Correction
