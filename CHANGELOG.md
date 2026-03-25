@@ -1,3 +1,132 @@
+## v3.10.32 — 2026-03-25
+
+### Dashboard enrichi + topbar recherche
+
+**Topbar — zone recherche élargie**
+Le bouton Recherche passe à min-width:180px avec justify:flex-start. Plus visible et plus facile à cliquer. Pas de raccourci affiché.
+
+**Dashboard — Prochaines échéances**
+Nouveau bloc (avant le donut/barres) : jusqu'à 5 prochaines échéances des investissements En cours, triées par date. Barre colorée à gauche (couleur de la catégorie), compte à rebours en rouge <30j / or <90j / vert sinon. Valeur actuelle en sous-titre.
+
+**Dashboard — Activité récente**
+Nouveau bloc côte à côte avec les échéances : les 6 derniers mouvements saisis toutes positions confondues (dépôt, dividende, intérêts, vente...), triés par date de mouvement décroissante. Contrairement au tableau supprimé qui triait par date d'investissement, ce bloc reflète la vraie activité récente. Point coloré par type de mouvement, montant signé +/-.
+
+---
+
+## v3.10.31 — 2026-03-25
+
+### Corrections & polish
+
+**Valeur actuelle toujours visible pour les livrets — corrigé**
+Cause : les clés livret et livret_exo étaient définies deux fois dans FORM_PROFILES. La seconde définition (sans fg-valeur) écrasait silencieusement la première. Suppression des doublons — fg-valeur est maintenant correctement masqué pour les livrets.
+
+**Bouton "Cols" visible uniquement en vue tableau**
+Masqué par défaut, affiché uniquement quand setInvView('table') est actif.
+
+**Raccourcis supprimés de la barre de recherche**
+Le footer avec ⌘K ⌘N ⌘R ↑↓ ↵ Esc a été retiré — encombrant et peu utile pour la majorité des utilisateurs.
+
+**Date supprimée du topbar**
+Suppression de l'élément topbar-date (date longue en police mono) et du JS qui la remplissait. Gagne de l'espace horizontal.
+
+**Topbar légèrement aéré**
+height 58px → 52px, padding latéral 26px → 22px, gap des boutons 8px → 6px. Plus compact sans être étriqué.
+
+---
+
+## v3.10.30 — 2026-03-25
+
+### Quick wins & suppressions
+
+**Supprimé — Tableau "Derniers mouvements" (dashboard)**
+Trompeur car trié par date d'investissement et non par activité récente. Redondant avec l'onglet Investissements. HTML + JS supprimés.
+
+**Masqué — Bouton "🗑 Cache" dividendes**
+Bouton technique exposé dans l'UI principale. Supprimé de l'interface (la fonction clearDivCache() reste disponible en interne).
+
+**Simplifié — Champ "Valeur actuelle" dans le formulaire**
+Masqué pour les enveloppes livret et livret_exo (la valeur = montant - frais, pas de saisie manuelle pertinente). Ticker et quantité masqués aussi pour ces enveloppes.
+
+**Cache sparklines**
+computeInvSparklineForPeriod() recalculait tout à chaque rendu. Ajout d'un cache en mémoire _sparkCache keyed par (invId|period|lastTickerUpdate). Le mode 1J reste toujours recalculé en live. Invalidation automatique lors d'un refresh ticker.
+
+**Colonnes masquables en vue tableau**
+Bouton "⊟ Cols" dans la filter-bar. Menu dropdown avec 4 colonnes optionnelles : TRI, Rendement, Frais, Échéance. Préférence persistée dans DB.settings.invCols.
+
+**Clic sur KPI = copier la valeur**
+Un clic sur n'importe quel KPI du tableau de bord copie la valeur dans le presse-papiers avec confirmation toast. Curseur pointer pour indiquer l'interactivité.
+
+**Raccourci Ctrl+R — actualiser les cours**
+Ajout de Ctrl+R (Cmd+R sur Mac) pour déclencher manualRefreshTickers() depuis n'importe quelle page.
+
+**Footer de recherche — raccourcis affichés**
+La search box (Ctrl+K) affiche maintenant les 6 raccourcis disponibles en bas : ⌘K, ⌘N, ⌘R, ↑↓, ↵, Esc.
+
+---
+
+## v3.10.29 — 2026-03-25
+
+### Corrections (4 bugs)
+
+**TRI bande KPIs — valeur correcte**
+computeTRI() retourne un taux décimal (0.015 pour 1.5%/an). La bande affichait triMoy.toFixed(1) directement → 0.0%/an. Corrigé : (triMoy*100).toFixed(1)+'%/an'.
+
+**Double € dans revenus passifs**
+fmt() inclut déjà le symbole € via Intl.NumberFormat. Les +' €' dans le header total/moyenne et les tooltips des barres produisaient '5 €€'. Tous supprimés.
+
+**Double € dans les dividendes**
+Même cause : fmt(perPayTotal, 2) + ' €' → '2,50 €€'. Et le montant annuel aussi. Supprimés.
+
+**Dividendes — affichage date amélioré**
+- Date confirmée (ex-div publié par Yahoo) : label 'Détachement' en couleur normale + estimation de la date de paiement (~ex-div +7j, affiché en 'Pmt ~07 avr.')
+- Date estimée : label 'Date estimée' en grisé, opacité réduite sur la date
+- TTL du cache réduit à 1h pour les entrées estimées (vs 6h pour les confirmées) — Yahoo peut publier la date officielle entre deux rechargements
+- Pour TTE/Total : après avoir cliqué '🗑 Cache' dans l'onglet Échéances, la date officielle (01/04) sera récupérée et affichée comme 'Détachement'
+
+---
+
+## v3.10.28 — 2026-03-25
+
+### Corrections Analyses (3 bugs)
+
+**€€ dans la bande KPIs**
+fmt() retourne déjà la devise via Intl.NumberFormat (ex: "5 €"). Les +'€' supplémentaires produisaient "5 €€". Supprimés.
+
+**Revenus passifs 12 mois vides alors que le bandeau affiche une valeur**
+Cause : toISOString() convertit en UTC. En France (UTC+1/+2), new Date(2025,2,1).toISOString() donne 2025-02-28T23:00:00Z → clé mois "2025-02" au lieu de "2025-03". Les mouvements ne matchaient jamais les bonnes clés. Fix : utiliser getFullYear()/getMonth() local pour construire les clés YYYY-MM.
+
+**TRI incorrect dans le classement**
+computeTRI() retourne un taux décimal (0.015 pour 1.5%/an). La ligne d'affichage appelait v.toFixed(1) directement → affichait "0.0%/an". Fix : afficher (tri*100).toFixed(1)+'%/an'. Le tri du classement gérait aussi mal les null (||0 les mettait au milieu) → remplacé par ??-Infinity pour les placer en bas de liste.
+
+---
+
+## v3.10.27 — 2026-03-25
+
+### Refonte onglet Analyses
+
+**Supprimé**
+- Bloc "Plus-values par catégorie" — doublon du donut et de la concentration
+- Bloc "Résumé consolidé" — 8 lignes de texte brut remplacées par la bande KPIs
+
+**Fusionné**
+- Top performers + Moins performants + Répartition par statut → absorbés dans les nouveaux blocs
+
+**Nouvel ordre de la page**
+1. Bande KPIs unifiée (6 métriques : valeur, capital, P&L, TRI, revenus/mois, statuts)
+2. Graphique évolution patrimoine + sélecteur période
+3. Donut allocation  ·  Concentration par position (côte à côte)
+4. Classement unique des positions (tri par P&L / TRI / Valeur)
+5. Revenus passifs 12 mois  ·  Prochaines échéances (côte à côte)
+6. Estimation des frais (repositionné, plus visible)
+
+**Nouveaux composants**
+- Bande KPIs : 6 métriques en grid horizontal, toujours visibles en haut de page
+- Classement des positions : tri commutable P&L / TRI / Valeur, flèche ↑↓, barre de progression proportionnelle, toutes les positions (pas seulement top 5)
+- Prochaines échéances : liste des 6 prochaines avec compte à rebours coloré (rouge < 30j, or < 90j), lien direct vers la valeur actuelle
+- Histogramme revenus aggrandi (110px), couleur progressive selon intensité, header total/moyenne
+
+---
+
 ## v3.10.26 — 2026-03-18
 
 ### Correction
