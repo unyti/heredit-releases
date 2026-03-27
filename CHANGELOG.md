@@ -1,3 +1,31 @@
+## v3.10.45 — 2026-03-27
+
+### Benchmark visible + bouton Voir tout repositionné
+
+**Benchmark — deux causes d'invisibilité corrigées**
+1. allVals ne contenait que valeur+capital : si bNorm sortait du range minV/maxV, les points étaient hors cadre SVG. Correction : bNorm est pré-calculé et inclus dans allVals avant le calcul de l'échelle Y.
+2. benchSvg était injecté après </g> (hors du clip-path) : la courbe pouvait dépasser la zone de tracé. Correction : benchSvg est maintenant rendu à l'intérieur du groupe clip-path.
+
+**Bouton "Voir tout" repositionné**
+Le bouton n'est plus dans le header de la card. Il apparaît directement sous la dernière ligne du classement, avec un style discret ("↓ Voir les N autres positions"). Un bouton "↑ Réduire" prend sa place quand tout est affiché.
+
+---
+
+## v3.10.44 — 2026-03-27
+
+### Corrections benchmark + classement
+
+**Benchmark — courbe invisible corrigée**
+Cause : le filter(Boolean) sur les prix supprimait les nulls mais cassait l'alignement index↔xS(i). Remplacé par un forward-fill (la dernière valeur connue est propagée). La courbe s'affiche maintenant correctement.
+
+**Benchmark — valeur dans le tooltip**
+Le tooltip de survol du graphique affiche maintenant la performance benchmark au point survolé (ex: CAC 40 +12.3%) avec la couleur de la courbe correspondante.
+
+**Classement — bouton "Voir tout" plus visible**
+Séparé des boutons P&L/TRI/Valeur par un | et affiché en bleu pour le distinguer clairement.
+
+---
+
 ## v3.10.43 — 2026-03-27
 
 ### Évolution par catégorie + Benchmark
