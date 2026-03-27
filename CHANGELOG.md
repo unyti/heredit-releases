@@ -1,3 +1,185 @@
+## v3.10.43 — 2026-03-27
+
+### Évolution par catégorie + Benchmark
+
+**Tableau évolution par catégorie (Analyses)**
+Nouveau bloc dans Analyses — Vue d'ensemble, entre le classement et les revenus passifs. Tableau avec une ligne par catégorie et 6 colonnes de performance : 1J · 1M · 3M · YTD · 1A · Tout. Chaque cellule affiche le P&L en euros + le pourcentage (base capital investi), coloré vert/rouge. Dernière colonne : valeur actuelle totale par catégorie.
+
+**Comparaison vs benchmark (graphique patrimoine)**
+Trois boutons à droite des sélecteurs de range : Aucun · CAC 40 · S&P 500. En base 100 depuis la date de départ du graphique, calée sur la valeur initiale du patrimoine pour faciliter la comparaison visuelle. La courbe est tracée en pointillés bleu (CAC 40) ou violet (S&P 500). Les données sont chargées via fetchTickerMonthlyHistory() déjà en place.
+
+---
+
+## v3.10.42 — 2026-03-25
+
+### Classement & Simulateur améliorés
+
+**Classement — top 10 par défaut**
+Le classement affiche les 10 premières positions au lieu de toutes. Un bouton "Voir tout" / "Réduire" permet d'afficher/masquer le reste. Un compteur indique combien de positions sont cachées.
+
+**Simulateur — sélection hiérarchique**
+La sélection par investissement individuel est remplacée par 4 niveaux :
+- Tout le portefeuille — impact global d'un dépôt ou retrait
+- Par catégorie — simuler un retrait sur toute une classe d'actifs
+- Par sous-catégorie — granularité intermédiaire
+- Par investissement — sélection individuelle, immobilier/SCPI/PE exclus par défaut
+
+Le donut de répartition est recalculé proportionnellement selon la cible. La carte résultat affiche maintenant la valeur actuelle ET simulée de la cible, plus l'impact sur le patrimoine total.
+
+---
+
+## v3.10.41 — 2026-03-25
+
+### Correction critique — cause racine définitive
+
+**Analytics, Aide et Paramètres hors de #content — corrigé**
+
+Cause identifiée par tracé de profondeur ligne par ligne sur #content :
+
+Un </div> orphelin se trouvait dans page-finances entre la fermeture
+de ftab-echeances (ligne 814) et le commentaire </div><!--/ftab-echeances-->.
+Ce </div> en trop fermait page-finances prématurément à depth=0 dans
+#content. La balise </div><!--/page-finances--> suivante fermait alors
+#content lui-même.
+
+Résultat : page-analytics, page-aide et page-settings étaient entièrement
+rendus HORS de #content — sans son padding (24px 28px 48px) et sans son
+overflow-y:auto. D'où : aucune marge, aucun scroll, layout cassé.
+
+Correction : suppression du </div> orphelin. La balance div de #content
+passe de 0 (incorrect — compensé par l'orphelin) à 1 (correct — #content
+ouvert mais compté dans le segment avant sa propre fermeture).
+
+---
+
+## v3.10.40 — 2026-03-25
+
+### Corrections scroll & layout — cause racine identifiée
+
+**Cause racine du scroll cassé (Aide, Paramètres, Analyses)**
+En v3.10.38, height:100% avait été retiré de #main pour tenter de corriger autre chose. Sans hauteur explicite sur #main, #content (flex:1) ne recevait pas de hauteur bornée dans Electron : il s'étendait à l'infini, overflow-y:auto ne créait jamais de scrollbar, et #main{overflow:hidden} coupait visuellement le contenu. C'est aussi la cause du simulateur qui s'affichait sur 50% de l'écran. Correction : height:100% restauré sur #main, min-height:0 ajouté à #content.
+
+**Analytics vue d'ensemble — bande KPI encadrée**
+La bande KPI (6 colonnes) est maintenant dans un wrapper .card pour un rendu cohérent avec le reste de la page. Retrait du padding-top:2px inutile sur atab-analytics.
+
+**CSS .page.active nettoyé**
+Suppression de min-height:0 sur .page.active (inutile sur un block, potentiellement perturbateur).
+
+---
+
+## v3.10.39 — 2026-03-25
+
+### Audit & nettoyage global
+
+**Structure HTML vérifiée**
+- Balance div dans #content : 0 (209 ouverts / 209 fermés)
+- 6 pages HTML exactement alignées avec les 6 entrées de nav
+- Aucune ref résiduelle vers les anciens IDs de pages (investments, echeances, emprunts, history, simulator)
+
+**Code mort supprimé**
+- Fonctions alias setPeriod(), setInvPeriod(), setAnaPeriod() supprimées (remplacées par setGlobalPeriod())
+- 24 règles CSS orphelines supprimées (-1912 chars) : .perf-*, .cat-evo-*, .inv-pl-*, .inv-val-block, .inv-card-tags, .inv-spark-tip, .ana-band, .cac-header/.label/.controls, .icon-opt, .dash-act-name
+- Commentaires résiduels nettoyés
+- Lignes vides multiples dans le CSS réduites
+
+**refreshCurrentPage étendu**
+Ajout du cas settings pour être exhaustif (utile si la fermeture du panneau mouvement survient depuis Paramètres).
+
+**JS syntax : OK**
+
+---
+
+## v3.10.38 — 2026-03-25
+
+### Corrections layout suite
+
+**Simulateur — affichage sur 50% corrigé**
+La 2ème carte du simulateur ("Impact sur la répartition") n'avait pas de </div> fermant. Le div.card ouvert n'était jamais refermé, ce qui cassait le layout grid2 et faisait déborder le simulateur sur la moitié basse de l'écran. Balance #content : 210/210.
+
+**Analyses — vue d'ensemble plus serrée**
+Ajout d'un padding-top:2px sur atab-analytics pour espacer visuellement le contenu des onglets tabs.
+
+**Paramètres — wrapper max-width**
+Le contenu de page-settings est maintenant enveloppé dans .settings-wrap (max-width:860px; padding:4px 0 40px), aligné avec le style de la page Aide.
+
+**Scroll Aide & Paramètres**
+Correction de #main : suppression de height:100% remplacé par min-height:0 (correct pour un flex-child). Le scroll dans #content (overflow-y:auto; flex:1) fonctionne maintenant correctement sur ces pages.
+
+---
+
+## v3.10.37 — 2026-03-25
+
+### Correction critique — layout
+
+**Aide / Paramètres / Analyses s'affichaient à droite et par-dessus le topbar**
+Cause : deux </div> orphelins dans page-finances (résidu de la fusion Écheances+Emprunts) fermaient prématurément #content et #main. Tout ce qui venait après (Analyses, Aide, Paramètres) se retrouvait hors du flux normal et s'affichait en dehors du layout. La balance div ouverts/fermés dans #content est maintenant 0 (209/209).
+
+---
+
+## v3.10.36 — 2026-03-25
+
+### Corrections post-restructuration
+
+**Analyses — contenu débordait sur le topbar**
+Cause double : (1) le SVG du graphique patrimoine avait overflow:visible qui faisait déborder visuellement le rendu, (2) le topbar n'avait pas de z-index et était donc recouvert. Corrections : z-index:10 + position:relative sur #topbar, overflow:hidden sur le SVG (le tooltip est en HTML par-dessus, pas impacté).
+
+**Analyses — affichage sur moitié d'écran**
+Balise </  orpheline dans atab-simulator (résidu du copier-coller lors de la fusion) qui cassait la structure HTML de toute la page Analyses. Supprimée.
+
+**Portfolio — renderHistory() inutile au chargement**
+renderHistory() était appelé systématiquement à chaque ouverture de l'onglet Portefeuille, même quand le tab Positions était actif. Supprimé — renderHistory() n'est appelé que lors du switchPortfolioTab('history').
+
+---
+
+## v3.10.35 — 2026-03-25
+
+### Refonte structurelle majeure
+
+**Filtre période global dans le topbar**
+Un seul sélecteur 1J·7J·1M·3M·YTD·1A·Tout dans la barre du haut remplace les 3 filtres dispersés (Dashboard, Investissements, Analyses). setGlobalPeriod() synchronise dashPeriod, invPeriod et anaPeriod d'un coup. Persisté dans DB.settings.globalPeriod.
+
+**5 onglets au lieu de 9**
+Navigation simplifiée :
+- Tableau de bord (inchangé)
+- Portefeuille = Investissements + onglet Historique intégré
+- Analyses = Vue d'ensemble + onglet Simulateur intégré
+- Finances = Échéances & dividendes + Emprunts & dettes (tabs internes)
+- Aide + Paramètres (en bas de sidebar)
+
+Chaque page principale a des onglets internes (tabs) pour naviguer entre ses sous-sections sans encombrer la sidebar.
+
+---
+
+## v3.10.34 — 2026-03-25
+
+### Nouvelles fonctionnalités majeures
+
+**Filtres période uniformisés**
+Tous les filtres de l'appli utilisent désormais le même set : 1J · 7J · 1M · 3M · YTD · 1A · Tout. Tableau de bord, Investissements et Analyses sont alignés. getPeriodStart(), PERIOD_RANGE_MAP et refreshPeriodPrices() étendus pour 7j et 3m.
+
+**Onglet Historique (📋)**
+Journal global de tous les mouvements, filtrable par catégorie, type et période. Sommaire en haut (nb mouvements, entrées/sorties/revenus). Tri chronologique décroissant.
+
+**Onglet Simulateur (🎯)**
+Simule l'impact d'un retrait partiel, d'une clôture totale ou d'un investissement supplémentaire sur n'importe quelle position. Affiche : valeur simulée, capital simulé, P&L simulé, variation du patrimoine total. Donut de répartition mis à jour en temps réel pour visualiser l'impact sur la diversification.
+
+---
+
+## v3.10.33 — 2026-03-25
+
+### Édition des mouvements
+
+**Bouton ✏️ sur chaque ligne de mouvement**
+Un bouton crayon apparaît à côté du bouton supprimer sur chaque mouvement. Au clic, le formulaire se pré-remplit avec les valeurs existantes (type, montant, date, note, quantité, prix unitaire), le header passe à "✏️ Modifier le mouvement" et le bouton à "Mettre à jour".
+
+**Gestion correcte des achats/ventes**
+Lors de la modification d'un achat ou d'une vente, l'ancien delta de quantité est d'abord inversé, puis le nouveau est appliqué. Évite toute désynchro entre la quantité de l'investissement et les mouvements.
+
+**Retour en mode ajout automatique**
+Après confirmation de la mise à jour, le formulaire revient au mode "+ Nouveau mouvement" et les champs sont vidés.
+
+---
+
 ## v3.10.32 — 2026-03-25
 
 ### Dashboard enrichi + topbar recherche
