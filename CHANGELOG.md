@@ -1,3 +1,18 @@
+## v3.10.46 — 2026-03-27
+
+### Correction bug P&L 1J — crowdfunding et investissements sans cours
+
+**Bug** : en période 1J, plForPeriod() retournait today.pl (P&L total depuis le début) pour tout investissement sans ticker (crowdfunding, livrets, immobilier…). Résultat : le P&L 1J affiché dans le tableau de bord gonflait artificiellement en incluant tout le gain accumulé de ces positions.
+
+**Correction plForPeriod 1J** :
+- Titre coté (resolvedTicker) : inchangé — variation prevClose → prixActuel
+- Rendement fixe (crowdfunding, livret…) : accrual journalier = capital × rendement / 365
+- Sans cours ni rendement : 0€ (valeur stable sur 1J), canPeriod: false
+
+**Correction pvTotal** : tous les agrégateurs de P&L (renderDashboard, renderAnalytics, renderAnaKPIBand, groupes de cartes) respectent maintenant canPeriod — les investissements pour lesquels la période ne peut pas être calculée ne contribuent plus au total affiché.
+
+---
+
 ## v3.10.45 — 2026-03-27
 
 ### Benchmark visible + bouton Voir tout repositionné
