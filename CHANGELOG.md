@@ -1,3 +1,13 @@
+## v3.10.47 — 2026-03-27
+
+### Bug édition mouvement — frais non pris en compte
+
+**Bug** : en mode édition (bouton ✏️), le champ Frais d'entrée était lu mais jamais traité. Le code mode édition mettait à jour le mouvement existant mais ignorait complètement la valeur du champ frais. Résultat : les frais saisis lors d'une édition n'avaient aucun effet sur le capital ou le solde.
+
+**Correction** : si frais > 0 lors d'une édition, un nouveau mouvement de type fraisachat est créé (comme en mode ajout). Ce type a capital:true — il réduit à la fois le solde et le capitalNet, ce qui est le comportement attendu pour des frais d'entrée. Le toast de confirmation indique désormais "Mouvement mis à jour + frais enregistrés" le cas échéant.
+
+---
+
 ## v3.10.46 — 2026-03-27
 
 ### Correction bug P&L 1J — crowdfunding et investissements sans cours
