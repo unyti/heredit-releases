@@ -1,3 +1,39 @@
+## v3.11.1 — 2026-03-27
+
+### Passage en version 3.11
+
+Bump de version majeure pour refléter l'ampleur des changements accumulés depuis la v3.10 :
+- Restructuration complète en 5 onglets (Tableau de bord / Portefeuille / Analyses / Finances / Paramètres)
+- Filtre période global unique dans le topbar
+- Historique global des mouvements
+- Simulateur de retrait/rééquilibrage hiérarchique
+- Évolution par catégorie multi-périodes
+- Benchmark CAC 40 / S&P 500 sur le graphique patrimoine
+- Édition des mouvements
+- Classement avec top 10 + déplier
+- Uniformisation des périodes 1J·7J·1M·3M·YTD·1A·Tout
+- Corrections P&L 1J pour les actifs sans cours
+- Corrections sparklines 7J/1M/3M
+- Corrections layout et scroll (série de bugs HTML/CSS post-restructuration)
+- Audit et nettoyage global du code
+
+---
+
+## v3.10.48 — 2026-03-27
+
+### Bug sparkline 7J — même courbe que 1M corrigé
+
+**Bug** : les périodes 7j, 1m et 3m tombaient toutes dans la branche monthly de _computeSparklineRaw (points mensuels depuis 24 mois). Résultat : les sparklines 7J et 1M étaient identiques.
+
+**Correction** : trois nouvelles branches dans _computeSparklineRaw :
+- 7j → granularité quotidienne (stepDays daily), depuis J-7
+- 1m → granularité quotidienne, depuis M-1 (les doublons week-end/férié sont dédupliqués)
+- 3m → granularité hebdomadaire (stepDays weekly), depuis M-3
+
+Les données utilisent tickerHistoryCache + findNearestPrice pour les titres cotés, et computeStats pour les autres actifs.
+
+---
+
 ## v3.10.47 — 2026-03-27
 
 ### Bug édition mouvement — frais non pris en compte
