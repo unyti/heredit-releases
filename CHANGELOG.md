@@ -1,3 +1,17 @@
+## v3.11.2 — 2026-03-27
+
+### Bug sparklines 7J/1M — correction définitive
+
+**Cause racine** : tickerHistoryCache contient des données mensuelles (interval=1mo, clés YYYY-MM-01). Les branches daily/weekly introduites en v3.10.48 appellaient findNearestPrice sur ces données mensuelles — tous les jours d'un même mois retournent le même prix, rendant les courbes 7J et 1M identiques et plates.
+
+**Solution** : nouveau cache journalier window._dailyCache alimenté par fetchTickerDailyHistory() qui appelle Yahoo Finance avec interval=1d&range=3mo. Les sparklines 7J, 1M et 3M utilisent désormais ce cache pour des prix réels par jour ouvré.
+
+**Chargement** : quand l'utilisateur sélectionne 7J/1M/3M dans le filtre global, tous les tickers actifs sont fetchés en parallèle, le cache sparkline est invalidé, puis la page est re-rendue. En background, le fetch est déclenché automatiquement pour chaque ticker manquant au moment du rendu. TTL 1h.
+
+**Invalidation** : window._dailyCache est vidé lors d'un refresh global (bouton ↻).
+
+---
+
 ## v3.11.1 — 2026-03-27
 
 ### Passage en version 3.11
