@@ -1,3 +1,27 @@
+## v3.11.4 — 2026-03-27
+
+### Projection echéance — affichage complet
+
+Carte isFlat : 3 lignes distinctes dans la section droite :
+- Deja percu : interets/dividendes deja encaisses (vert)
+- A recevoir : capital restant + interets futurs (bleu)
+- Total final : deja percu + a recevoir (valeur totale du placement a echeance)
+
+Label Capital restant au lieu de Valeur actuelle sur toutes les cartes isFlat.
+
+---
+
+## v3.11.3 — 2026-03-27
+
+### Correction calcul valeur / revenus placements a rendement fixe
+
+- Interets/dividendes ne gonflent plus la valeur de l'actif (trackes separement dans 'revenus')
+- Anti double-comptage : accrual auto desactive si mvts interets/dividende saisis
+- Valeur projetee a l'echeance : capital restant + interets futurs
+- Carte : affiche revenus percus + projection echeance
+
+---
+
 ## v3.11.2 — 2026-03-27
 
 ### Bug sparklines 7J/1M — correction définitive
