@@ -1,3 +1,41 @@
+## v3.12.0
+
+### Gains realises mis en avant + tri investissements corrige
+
+**Gains realises repositionnes**
+Le bloc Gains & pertes realises remonte juste apres les KPIs en haut de la page Analyses (avant le graphique patrimoine). Bordure gauche verte pour le distinguer visuellement. Le bloc se masque automatiquement si aucune vente nest enregistree.
+
+**Tri investissements corrige**
+Quand un tri autre que Date est selectionne (Montant, P&L, Nom), les cartes sinvestissement s affichent maintenant en liste plate sans regroupement par categorie. Le tri est donc pleinement respecte a lchelle globale. Avec le tri Date (defaut), le regroupement par categorie est conserve.
+
+---
+
+## v3.11.9 — Gains realises
+
+Nouveau : les gains realises (ventes de positions) sont desormais calcules et affiches.
+
+computeStats() retourne maintenant plRealise = recettes ventes - cout achat. Pour les positions avec quantites (actions, ETF), le cout est calcule via le PRU courant (capitalNet / quantite) pour chaque lot vendu. Pour les positions sans quantites (crowdfunding, immo...), un calcul proportionnel a la valeur courante est utilise.
+
+Deux nouveaux affichages dans Analyses :
+- KPI Gains realises dans la bande du haut (remplace TRI moyen). Affiche le total des plRealise de toutes les positions.
+- Section Gains & pertes realises en bas de page : tableau des positions ayant des ventes (nom, total encaise, gain net, statut). Resume : total encaisse, gains nets, nombre de positions.
+
+Le P&L latent est renomme P&L latent dans les KPI pour le distinguer des gains realises.
+
+---
+
+## v3.11.8 — Simulateur redesign complet
+
+Remplacement du simulateur retrait/repartition par 3 scenarios orientes decision :
+
+1. Investissement futur : versement initial + mensualites + rendement + duree. Courbe SVG de projection avec capital verse vs valeur totale. KPIs : valeur finale, total verse, gains, revenus/mois en fin de periode.
+
+2. Reequilibrage : definition des cibles % par categorie. Calcul automatique des actions acheter/vendre en euros. Validation total = 100%.
+
+3. Revenus cibles : objectif mensuel + rendement attendu. Capital necessaire, progression actuelle, duree estimee par reinvestissement. Revenus reels encaisses (12 derniers mois) vs revenus theoriques du patrimoine.
+
+---
+
 ## v3.11.4 — 2026-03-27
 
 ### Projection echéance — affichage complet
