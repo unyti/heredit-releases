@@ -1,3 +1,198 @@
+# CHANGELOG — Heredit
+
+## v3.14.8 — 2026-05-13
+
+### Nouvelles fonctionnalités
+- **Verser aux liquidités depuis un mouvement** — option "Verser aux liquidités de l'enveloppe" dans le formulaire Intérêts / Dividende / Bonus ; met à jour automatiquement le champ liquidités de la catégorie sans passer par les Paramètres
+
+### Corrections
+- **Bonus / Prime** désormais visible dans les 3 formulaires de mouvement (les selects JS générés dynamiquement n'avaient pas été mis à jour)
+
+---
+
+## v3.14.7 — 2026-05-13
+
+### Corrections
+- **Capital investi incohérent** — `tI` (KPI Analyses et Tableau de bord) n'incluait pas `totalLiquidites()`, contrairement au graphique → les deux affichent maintenant le même capital
+- **Dépôts récents peu visibles sur le graphique** — les liquidités étaient appliquées identiquement à tous les points historiques (gonflant le passé) ; désormais elles ne s'ajoutent qu'au point d'aujourd'hui
+
+---
+
+## v3.14.6 — 2026-05-13
+
+### Corrections
+- **Bonus / Prime ajouté dans le formulaire mouvement** — le type existait dans MVT_TYPES et computeStats mais était absent des selects HTML/JS
+
+---
+
+## v3.14.5 — 2026-05-13
+
+### Nouvelles fonctionnalités
+- **Type Bonus / Prime (🎁)** ajouté dans le select du formulaire mouvement (1re occurrence HTML)
+- **Frais d'entrée (🏷)** ajouté dans le select du formulaire mouvement
+
+---
+
+## v3.14.4 — 2026-05-13
+
+### Nouvelles fonctionnalités
+- **Responsive complet** — deux breakpoints media queries :
+  - `< 1440px` : sidebar 200px, colonnes cartes réduites, grid4 en 2×2
+  - `< 1280px` : sidebar 48px (icônes), barre période allégée (sans 7J/YTD), KPI héros en colonne unique, grid2 en colonne unique
+
+---
+
+## v3.14.3 — 2026-05-12
+
+### Corrections
+- **Hauteur des cartes** — suppression de `flex-wrap:wrap` sur le div Capital/PRU/TRI (TRI ne passe plus à la ligne)
+- Colonnes cartes restaurées aux tailles d'origine (id:210px, pl:190px, vals:230px)
+- Nom d'investissement sur 2 lignes max (`-webkit-line-clamp:2`) au lieu de couper
+
+---
+
+## v3.14.2 — 2026-05-12
+
+### Corrections
+- **Dividende Renault** — `meta.exDividendDate` accepté si < 60 jours dans le passé (évite d'ignorer la vraie date annoncée)
+- **Cartes portefeuille** — suppression de `flex-wrap:wrap`, tailles de colonnes compactes fixes
+
+---
+
+## v3.14.1 — 2026-05-12
+
+### Corrections
+- **KPI héros trop large** — layout grid 2 colonnes : héros `minmax(0,340px)` + secondaires `1fr`
+- **Graphique patrimoine — point aujourd'hui** — utilise `computeValeur()` (cours temps réel) au lieu du cours mensuel historique → cohérence avec le KPI
+- **Feedback chargement** — bordure bleue + opacité réduite + icône ↻ animée sur les cartes en cours de fetch
+- **Dividende BNP** — estimation par mois habituels des versements passés (au lieu de last+interval)
+
+---
+
+## v3.14.0 — 2026-05-11
+
+### Nouvelles fonctionnalités
+- **① Breadcrumb** — sous-titre dynamique dans la topbar : "Portefeuille › Historique", "Analyses › Simulateur"
+- **② Cartes responsives** — colonnes flex adaptatives (remplacement des flex:0 0 Npx rigides)
+- **④ Sections Analyses repliables** — Allocation, Concentration, Revenus, Échéances, Frais ; état persisté dans `DB.settings.sectionPrefs`
+- **⑤ Feedback chargement tickers** — classe `.loading-ticker` + animation `.val-updated` après refresh
+- **⑥ Empty states contextuels** — 3 états : 🌱 premier lancement, 🔍 aucun résultat de filtre, 📦 tout archivé
+- **Graphique patrimoine + liquidités** — `computePatrimoineSeries` inclut `totalLiquidites()` dans chaque point
+
+### Corrections
+- **Date dividende** — logique futureEvt → meta future → estimation par mois habituels
+- `manualRefreshTickers` déclarée `async`
+
+---
+
+## v3.13.8 — 2026-05-10
+
+### Corrections
+- **Portefeuille vide** — `showArchived` déclaré après utilisation (temporal dead zone) → déclaration remontée
+
+---
+
+## v3.13.7 — 2026-05-10
+
+### Corrections
+- **Liquidités filtre catégorie** — `filtTotalLiq` calculé et affiché dans le bandeau résumé ; carte dédiée supprimée
+- **Total racine < total sous-cat** — `totalValWithLiq` agrège racine + sous-catégories
+
+---
+
+## v3.13.6 — 2026-05-10
+
+### Corrections
+- **Liquidités sous-groupe** — `\${fmt(scLiq,0)}` s'affichait littéralement (template literal imbriqué mal échappé)
+
+---
+
+## v3.13.5 — 2026-05-10
+
+### Corrections
+- **Liquidités dans la bonne sous-catégorie** — `catLiquid` ne remonte plus toutes les sous-cats dans la racine
+- **Header sous-groupe** — affiche `scTotal = scVal + scLiq` + badge 💵
+- **Groupe vide** — rendu si une sous-cat a des liquidités (même sans investissement direct)
+- **Tooltip donut** — div hors de `.donut-center` (qui a `pointer-events:none`)
+
+---
+
+## v3.13.4 — 2026-05-09
+
+### Corrections
+- **Liquidités invisibles portefeuille** — `if (!items.length) continue` sautait le groupe avant le calcul des liquidités
+- **Donut zone sans couleur** — `aggByCat` inclut maintenant les liquidités dans la valeur de chaque catégorie
+- **Tooltip donut au survol** — affiche icône · catégorie · % · montant
+
+---
+
+## v3.13.3 — 2026-05-09
+
+### Nouvelles fonctionnalités
+- **Liquidités sur catégorie** — champ "Liquidités disponibles (€)" dans le formulaire d'édition catégorie ; incluses dans le total du groupe, le patrimoine et le simulateur
+- **Auto-archivage positions clôturées** — vente totale (qté=0) → statut Remboursé automatique
+- **Rétroactivité** — positions ticker+qté=0 encore "En cours" basculées au démarrage
+- **Toggle 📦 Archivées** — remplace le select statut ; désactivé par défaut ; persisté
+
+---
+
+## v3.13.2 — 2026-05-08
+
+### Corrections
+- **version package.json** — bloquée à 3.13.0 ; bump via `json.load/dump` Python
+- **Guide dans l'app** — sections Portefeuille et Simulateur ajoutées dans renderAide ; tableau mouvements mis à jour avec Bonus/Prime
+
+---
+
+## v3.13.1 — 2026-05-08
+
+### Corrections
+- **Temporal dead zone** — `showArchived` utilisé avant déclaration dans renderInv
+
+---
+
+## v3.13.0 — 2026-05-08
+
+### Nouvelles fonctionnalités
+- **Liquidités sur catégorie** (v1) — champ ajouté dans Paramètres, affiché dans le header groupe avec badge 💵
+- **Auto-archivage** — vente totale → Remboursé automatique + rétroactivité au boot
+- **Toggle 📦 Archivées** — filter-bar Portefeuille
+
+---
+
+## v3.12.9 — 2026-05-07
+
+### Nouvelles fonctionnalités
+- **Simulateur — Base de calcul** — sélecteur Tout le patrimoine / Actifs financiers (exclut immo/SCPI/PE) / Par catégorie
+- `getSimLiquidites()` helper pour inclure les liquidités dans le scope de simulation
+
+---
+
+## v3.12.8 — 2026-05-07
+
+### Nouvelles fonctionnalités
+- **Type Bonus / Prime (🎁)** — revenu exceptionnel sans impact sur solde ni projections
+- **Persistance filtres** — `invFilters` mis à jour par handlers inline ; `DB.settings.invCat/invStatus/invSearch/invSort` sauvegardés et rechargés au boot
+
+### Corrections
+- **P&L 1J = 0 avant la date de début** — investissement daté dans le futur affiche 0€ jusqu'à cette date
+
+---
+
+## v3.12.7 — 2026-05-06
+
+### Corrections
+- Persistance filtres (tentative) — `invFilters` chargé depuis `DB.settings` au boot pour `invCat`, `invStatus`, `invSearch`
+
+---
+
+## v3.12.6 — 2026-05-06
+
+### Corrections
+- **Persistance du tri** — `isFreshPage` basé sur `cEl.options.length` causait la perte du tri au redémarrage (DOM par défaut 'date' écrasait `invFilters.sort`)
+
+---
+
 ## v3.12.0
 
 ### Gains realises mis en avant + tri investissements corrige
