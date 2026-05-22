@@ -1,5 +1,13 @@
 # CHANGELOG — Heredit
 
+## v3.14.16 — 2026-05-18
+
+### Correction affichage P&L carte
+- **P&L boursier pur en principal** — la carte affiche désormais `valeur − capital` (plus-value/moins-value pure, sans dividendes), identique à ce qu'affichent les plateformes courtières. Pour Renault : -175€ au lieu de -96€.
+- **Dividendes en secondaire** — si des dividendes/intérêts ont été perçus, une ligne `+ X€ dividendes` apparaît sous le P&L en doré. Le Total Return (P&L + revenus) reste consultable dans l'onglet Analyses.
+
+---
+
 ## v3.14.15 — 2026-05-18
 
 ### Amélioration
