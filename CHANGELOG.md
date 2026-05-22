@@ -1,5 +1,21 @@
 # CHANGELOG — Heredit
 
+## v3.14.18 — 2026-05-18
+
+### Correction P&L carte — comportement selon filtre de période
+- **Filtre "Tout"** → affiche P&L total depuis l'achat (`valeur − capital`, sans dividendes) = correspond à la plateforme courtière. Les dividendes perçus apparaissent en secondaire.
+- **Autres filtres (1J, 7J, 1M…)** → affiche le P&L de la période (variation de cours sur la fenêtre sélectionnée). Le P&L total est affiché en secondaire.
+- Corrige le bug de v3.14.16 où le P&L restait identique quel que soit le filtre.
+
+---
+
+## v3.14.17 — 2026-05-18
+
+### Correction critique
+- **Sparklines "NaN"** — un `+ + rightSection` (double opérateur `+`) transformait la string sparkline en `NaN` via coercition arithmétique JavaScript. Résidu de la réécriture de la section P&L en v3.14.16. Corrigé en `+ rightSection`.
+
+---
+
 ## v3.14.16 — 2026-05-18
 
 ### Correction affichage P&L carte
