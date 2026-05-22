@@ -1,5 +1,45 @@
 # CHANGELOG — Heredit
 
+## v3.14.15 — 2026-05-18
+
+### Amélioration
+- **Carte investissement — P&L total en principal** — la carte affiche désormais le **P&L total depuis l'achat** (`valeur − capitalNet`) comme valeur principale, avec le % correspondant. Le P&L de la période active (ex: 1A) est affiché en secondaire en grisé sous le total. Résout la confusion entre P&L total (affiché par les plateformes courtières) et P&L de période (variation sur la fenêtre sélectionnée dans la topbar).
+
+---
+
+## v3.14.14 — 2026-05-13
+
+### Corrections & améliorations
+- **Tri "Montant"** — utilisait `inv.montant` (montant initial à la création) au lieu de la valeur actuelle → Renault créé à 130€ restait en bas malgré 1 284€ de capital et une valeur supérieure
+- **Tri "Valeur actuelle ↓"** — remplace "Montant", trie sur `computeStats(i).valeur` (cours live × quantité ou accrual)
+- **Nouveau tri "Capital investi ↓"** — trie sur `computeStats(i).capitalNet` (capital réellement déployé incluant les frais)
+
+---
+
+## v3.14.13 — 2026-05-13
+
+### Corrections
+- **PRU — frais d'entrée (fix définitif)** — les investissements avec ticker (actions, ETF) sans mouvements séparés empruntent un early return dans `computeStats` (`capitalNet: montant0`) qui ignorait `fraisAchat`. Les 3 early returns ont été corrigés : `capitalNet = montant0 + fraisAchat`. Vérification : Coface 62 titres × 16.33€ + 9.11€ frais → PRU = 16.47€ ✅
+
+---
+
+## v3.14.12 — 2026-05-13
+
+### Corrections
+- **PRU — frais dans la boucle events** — `fraisachat` (mouvement séparé) corrigé : `capitalNet += fraisachat` au lieu de `-=`
+- **PRU — frais sur init** — event 'init' : `capitalNet += montant + fraisAchatVal` (boucle events uniquement)
+
+---
+
+## v3.14.11 — 2026-05-13
+
+### Corrections
+- **P&L 1J — investi aujourd'hui** — si `inv.date === today`, calcul depuis l'achat (`valeur − capitalNet`) au lieu de `cours_actuel − cours_hier`
+- **PRU — fraisachat sign** — tentative de correction (incomplète, remplacée par v3.14.12-13)
+
+---
+
+
 ## v3.14.8 — 2026-05-13
 
 ### Nouvelles fonctionnalités
