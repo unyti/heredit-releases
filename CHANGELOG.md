@@ -1,5 +1,24 @@
 # CHANGELOG — Heredit
 
+## v3.14.20 — 2026-05-18
+
+### Nouvelle fonctionnalité — Prolongation / Retard (crowdfunding)
+- **Type de mouvement ⏰ Prolongation / Retard** — permet de modifier le taux et/ou l'échéance d'un investissement à partir d'une date donnée, sans recréer la position
+- **Calcul multi-taux dans `computeStats`** — l'accrual s'applique au taux précédent jusqu'à la date de la prolongation, puis au nouveau taux pour la suite (ex : 12%/an jusqu'au 15/03/2026, 14%/an ensuite)
+- **Échéance dynamique** — `echeanceCourante` suit la dernière prolongation ; les projections "À recevoir" utilisent la bonne date finale
+- **Formulaire dédié** — champs Nouveau taux (%/an) et Nouvelle échéance apparaissent uniquement pour ce type de mouvement
+- **Historique** — les prolongations s'affichent en orange dans l'historique : `→ 14%/an ⏩ 31/12/2026`
+
+### Mode d'emploi
+1. Ouvrir les mouvements du projet en retard
+2. Type : ⏰ Prolongation / Retard
+3. Date : date officielle de la prolongation
+4. Montant : 0 (ou pénalité éventuelle)
+5. Nouveau taux : 14 (si passage de 12% à 14%)
+6. Nouvelle échéance : nouvelle date de remboursement
+
+---
+
 ## v3.14.19 — 2026-05-18
 
 ### Correction P&L — dividendes exclus pour les actions
