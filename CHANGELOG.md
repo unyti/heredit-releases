@@ -1,5 +1,14 @@
 # CHANGELOG — Heredit
 
+## v3.14.19 — 2026-05-18
+
+### Correction P&L — dividendes exclus pour les actions
+- **`plForPeriod` — période "Tout"** : utilisait `today.pl` (= valeur − capital + dividendes) pour les actions → P&L gonflé. Remplacé par `valeur − capitalNet` pour tous les investissements avec ticker.
+- **`plForPeriod` — fallback** (investissement créé après le début de la période, ex : Renault acheté juil. 25 avec filtre 1A depuis mai 25) : même bug, même fix.
+- Les investissements non-ticker (crowdfunding, livrets) conservent `today.pl` (les intérêts font partie de la performance réelle).
+
+---
+
 ## v3.14.18 — 2026-05-18
 
 ### Correction P&L carte — comportement selon filtre de période
