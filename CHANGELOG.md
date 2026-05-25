@@ -1,5 +1,26 @@
 # CHANGELOG — Heredit
 
+## v3.14.23 — 2026-05-19
+
+### Correction
+- **Prolongation — validation** : `montant = 0` était falsy → toast "Montant et date obligatoires" bloquait l'enregistrement. Pour le type `prolongation`, seule la date reste obligatoire.
+
+---
+
+## v3.14.22 — 2026-05-19
+
+### Correction
+- **Prolongation — champs invisibles** : le bloc "Nouveau taux / Nouvelle échéance" était injecté dans la branche ticker de `renderMvtForm` au lieu de la branche non-ticker (crowdfunding). `getElementById('mvt-f-prol-wrap')` retournait null → aucun champ affiché.
+
+---
+
+## v3.14.21 — 2026-05-19
+
+### Correction
+- **Prolongation — formulaire** : bloc "Paramètres de la prolongation" manquant dans le template dynamique non-ticker ; double `display:none` corrigé dans le HTML statique ; frais d'entrée masqués automatiquement ; montant pré-rempli à 0.
+
+---
+
 ## v3.14.20 — 2026-05-18
 
 ### Nouvelle fonctionnalité — Prolongation / Retard (crowdfunding)
