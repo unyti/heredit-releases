@@ -1334,6 +1334,14 @@ Plusieurs appels renderInv() internes à refreshAllTickers() consommaient les da
 - Gestion des dettes et emprunts
 - Catégories hiérarchiques personnalisables
 - Installeur NSIS + version portable
+## v3.14.30 — 2026-05-20
+
+### Correction — PRU dans Analyses > Gains & Pertes réalisés
+- **PRU = — pour les positions vendues** : `qteTotale = Number(inv.quantite)` lisait la quantité **actuelle** (= 0 pour une position entièrement vendue). Le PRU au moment de la vente était donc incalculable.
+- Ajout d'un compteur `runningQte` dans la boucle events qui suit la quantité réelle au fil des achats et des ventes. Au moment d'une vente, `qteTotale = runningQte` (quantité détenue AVANT la vente) → PRU correct même pour les positions entièrement clôturées.
+
+---
+
 ## v3.14.29 — 2026-05-20
 
 ### Nouvelle fonctionnalité — Prix par titre dans le formulaire d'investissement
