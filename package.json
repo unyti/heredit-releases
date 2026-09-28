@@ -1,0 +1,64 @@
+{
+  "name": "heredit",
+  "version": "3.14.38",
+  "description": "Heredit — Suivi de patrimoine personnel",
+  "author": "Heredit",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0",
+    "electron-builder": "^24.13.0"
+  },
+  "build": {
+    "appId": "fr.heredit.app",
+    "productName": "Heredit",
+    "copyright": "Copyright © 2025",
+    "asar": true,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Heredit",
+      "uninstallDisplayName": "Heredit",
+      "deleteAppDataOnUninstall": false,
+      "include": "assets/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "Heredit-portable.exe"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/unyti/heredit-releases.git"
+  }
+}

@@ -1,0 +1,109 @@
+# Publie automatiquement une nouvelle version de Heredit.
+# Déclenchement : chaque envoi sur main. Si la version de package.json n'a pas encore de release,
+# GitHub compile l'installeur et la version portable sous Windows, crée la release « X.Y.Z »,
+# puis met à jour update.json : les Heredit installées proposent alors la mise à jour.
+# Si la release existe déjà avec ses deux fichiers, rien n'est fait.
+name: Publier une version
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publier
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      nouvelle: ${{ steps.v.outputs.nouvelle }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          ACTIFS=$(gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)
+          if echo "$ACTIFS" | grep -qx "Heredit.Setup.$VERSION.exe" && echo "$ACTIFS" | grep -qx 'Heredit-portable.exe'; then
+            echo "La version $VERSION est déjà publiée : rien à faire."
+            echo "nouvelle=non" >> "$GITHUB_OUTPUT"
+          else
+            echo "Nouvelle version $VERSION à publier."
+            echo "nouvelle=oui" >> "$GITHUB_OUTPUT"
+          fi
+
+  publier:
+    needs: version
+    if: needs.version.outputs.nouvelle == 'oui'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Installer les dépendances
+        run: npm install --no-audit --no-fund
+
+      - name: Vérifier la syntaxe
+        shell: bash
+        run: |
+          node --check main.js
+          node --check preload.js
+          node -e "const h=require('fs').readFileSync('index.html','utf8');const m=h.match(/<script>([\s\S]*?)<\/script>\s*<\/body>/);new (require('vm').Script)(m[1]);console.log('index.html OK')"
+
+      - name: Construire l'installeur et la version portable
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Créer la release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          cp "dist/Heredit Setup $VERSION.exe" "Heredit.Setup.$VERSION.exe"
+          cp dist/Heredit-portable.exe Heredit-portable.exe
+          awk -v v="## v$VERSION" 'index($0, v) == 1 { garder = 1; next } /^## / { garder = 0 } garder' CHANGELOG.md > notes.md
+          gh release delete "$VERSION" --repo "$GITHUB_REPOSITORY" --yes 2>/dev/null || true
+          gh release create "$VERSION" "Heredit.Setup.$VERSION.exe" Heredit-portable.exe \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "V.$VERSION" --notes-file notes.md --latest
+
+  annoncer:
+    needs: [version, publier]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Vérifier que les fichiers sont téléchargeables
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/$VERSION"
+          curl -fsSIL "$BASE/Heredit.Setup.$VERSION.exe" > /dev/null
+          curl -fsSIL "$BASE/Heredit-portable.exe" > /dev/null
+      - name: Mettre à jour update.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/$VERSION"
+          node -e '
+            const fs = require("fs")
+            const v = process.env.VERSION, base = process.argv[1]
+            const u = { version: v, notes: "", date: new Date().toISOString().slice(0, 10),
+              files: { installer: `${base}/Heredit.Setup.${v}.exe`, portable: `${base}/Heredit-portable.exe` } }
+            fs.writeFileSync("update.json", JSON.stringify(u, null, 2) + "\n")
+          ' "$BASE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add update.json
+          git diff --cached --quiet || { git commit -m "update.json : version $VERSION"; git push; }
