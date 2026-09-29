@@ -1,5 +1,28 @@
 # CHANGELOG — Heredit
 
+## v3.14.41 — 2026-09-29
+
+### Un seul P&L, partout
+- **Définition unique** : P&L = plus-value latente + plus-values réalisées (ventes, frais déduits) + intérêts et dividendes perçus − frais courants. Même chiffre sur les cartes, le panneau des mouvements, le tableau de bord, les catégories, le classement et Analyses.
+- **Cartes à rendement** (crowdfunding) : les intérêts déjà perçus étaient oubliés (ex. un projet à +246 € affiché +2 €). La carte indique « dont X € div./int. ».
+- **Positions vendues** : leurs plus-values comptaient pour 0 € dans les totaux, et pour une perte sur les périodes YTD/1A (ex. −384 € au lieu de +354 €).
+- **P&L par période** : calculé comme P&L à la fin − P&L au début de la période. Les dividendes versés avant la période ne sont plus comptés ; sans cours disponible, la période n'est plus chiffrée au hasard.
+
+### Rien n'est compté deux fois
+- **Frais d'achat** : ils s'ajoutent au coût de revient et ne réduisent plus aussi la valeur (ils étaient déduits deux fois sur les actifs sans cours en direct, ex. immobilier ou crowdfunding sans rendement).
+- **Vente** : la valeur et le capital perdent la même part vendue, au coût de revient.
+- **Livret** : des intérêts crédités, saisis en « Intérêts reçus », restent sur le livret au lieu d'en être retirés.
+- **Projet en défaut** : il n'accumule plus d'intérêts non perçus ; sa valeur est plafonnée au capital restant.
+- **Rendement annualisé (TRI)** : il tient compte des frais d'achat et de vente et des bonus.
+- Contrôle indépendant sur 27 positions réelles : P&L = valeur actuelle + sommes reçues − sommes apportées, sans aucun écart.
+
+### Saisie des mouvements
+- **Modifier une prolongation** ne l'efface plus : le nouveau taux et la nouvelle échéance sont pré-remplis et conservés.
+- **Frais** : modifier un achat ou une vente remplace ses frais au lieu d'en ajouter un doublon ; supprimer une vente supprime aussi ses frais et rétablit la quantité et le statut.
+- Taux prolongé affiché « 14%/an » au lieu de « 14.0%/an ».
+
+---
+
 ## v3.14.40 — 2026-09-29
 
 ### Analyses › Gains & pertes réalisés

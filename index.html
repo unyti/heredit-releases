@@ -2675,6 +2675,8 @@ function buildCashFlows(inv) {
     else if (m.type === 'frais')     flows.push({ t, v: -v })
     else if (m.type === 'achat')     flows.push({ t, v: -v })
     else if (m.type === 'vente')     flows.push({ t, v: +v })
+    else if (m.type === 'fraisachat') flows.push({ t, v: -v })
+    else if (m.type === 'bonus')     flows.push({ t, v: +v })
   }
 
   const today = new Date(); today.setHours(12,0,0,0)
@@ -2756,7 +2758,7 @@ function computeStats(inv, asOf) {
       const v   = calcValeurMetal(inv.metalPoids, inv.metalPurete||99.9, c.priceRaw, cfg.unit, c.eurUsd)
       if (v !== null) {
         const cn = montant0 + (Number(inv.fraisAchat)||0)
-        return { valeur:v, capitalNet:cn, pl:v-cn, plRealise:0, revenus:0,
+        return { valeur:v, capitalNet:cn, pl:v-cn, plRealise:0, revenus:0, charges:0, investi:cn,
                  valeurProjetee:null, interetsFuturs:0, totalEcheance:null,
                  echeanceCourante:null, tauxCourant:null, ventesDetail:[], mode:'metal', mvtCount:mvts.length }
       }
@@ -2764,28 +2766,23 @@ function computeStats(inv, asOf) {
   }
 
   if (!hasMvts && !hasRend) {
+    // Montant = ce qui a été placé (valeur de départ). Les frais s'ajoutent au coût (capital) :
+    // ils ne sont comptés qu'une fois dans le P&L, jamais aussi en moins sur la valeur.
     const fraisAchat0 = Number(inv.fraisAchat)||0
-    const cn0 = montant0
+    const cout0 = montant0 + fraisAchat0
+    const base0 = { capitalNet:cout0, plRealise:0, revenus:0, charges:0, investi:cout0, ventesDetail:[], mode:'manuel', mvtCount:0 }
     if (asOf) {
       const snaps = (DB.valorisations[inv.id]||[]).filter(v => v.date <= asOf).sort((a,b)=>b.date.localeCompare(a.date))
-      if (snaps.length) {
-        const val = Number(snaps[0].valeur)
-        return { valeur:val, capitalNet:cn0, pl:val-cn0, mode:'manuel', mvtCount:0, hasSnap:true }
-      }
-      return { valeur:cn0 - fraisAchat0, capitalNet:cn0 + fraisAchat0, pl:-(2*fraisAchat0), mode:'manuel', mvtCount:0, hasSnap:false }
+      const val = snaps.length ? Number(snaps[0].valeur) : montant0
+      return Object.assign({}, base0, { valeur:val, pl:val-cout0, hasSnap:snaps.length>0 })
     }
     if (inv.ticker && inv.quantite > 0 && inv.prixUnitaire > 0) {
       const liveVal  = Math.round(inv.prixUnitaire * inv.quantite * 100) / 100
-      const cn0live  = montant0 + fraisAchat0   // PRU inclut les frais d'entrée
-      return { valeur:liveVal, capitalNet:cn0live, pl:liveVal-cn0live, mode:'manuel', mvtCount:0, isLive:true }
+      return Object.assign({}, base0, { valeur:liveVal, pl:liveVal-cout0, isLive:true })
     }
     const recentSnaps = (DB.valorisations[inv.id]||[]).slice().sort((a,b)=>b.date.localeCompare(a.date))
-    // Si snapshot utilisateur → valeur explicite (frais déjà intégrés ou non selon l'utilisateur)
-    // Sinon → valeur nette = montant - frais (inv.valeur ignoré car il vaut montant par défaut)
-    const val = recentSnaps.length
-      ? Number(recentSnaps[0].valeur)
-      : Math.max(0, montant0 - fraisAchat0)
-    return { valeur:val, capitalNet:cn0 + fraisAchat0, pl:val-(cn0+fraisAchat0), mode:'manuel', mvtCount:0 }
+    const val = recentSnaps.length ? Number(recentSnaps[0].valeur) : montant0
+    return Object.assign({}, base0, { valeur:val, pl:val-cout0 })
   }
 
   const events = []
@@ -2808,11 +2805,10 @@ function computeStats(inv, asOf) {
   let runningQte = qteInitiale   // quantité courante — pour calcul PRU exact au moment des ventes
 
   if (!events.length) {
-    const fraisAchat0b = Number(inv.fraisAchat)||0
-    const cn0b = montant0
+    const cout0b = montant0 + (Number(inv.fraisAchat)||0)
     const rawVal = Number(inv.valeur)
-    const val = rawVal > 0 ? rawVal : Math.max(0, montant0 - fraisAchat0b)
-    return { valeur:val, capitalNet:cn0b, pl:val-cn0b, mode:'manuel', mvtCount:0 }
+    const val = rawVal > 0 ? rawVal : montant0
+    return { valeur:val, capitalNet:cout0b, pl:val-cout0b, plRealise:0, revenus:0, charges:0, investi:cout0b, ventesDetail:[], mode:'manuel', mvtCount:0 }
   }
 
   const fraisAchatVal = Number(inv.fraisAchat)||0
@@ -2820,7 +2816,13 @@ function computeStats(inv, asOf) {
   let solde = initBase
   let capitalNet = initBase
   let revenus = 0       // intérêts + dividendes déjà versés (cash sorti de l'actif)
+  let charges = 0       // frais courants (droits de garde, frais de plateforme…)
+  let investi = 0       // total de l'argent apporté (base du % de performance)
   let prevDate = null
+  // Livret : les intérêts crédités restent sur le livret (capitalisés), ils ne le quittent pas
+  const _envInv  = (DB.categories.find(c => c.id === (inv.subcat || inv.cat)) || DB.categories.find(c => c.id === inv.cat) || {}).enveloppe
+  const isLivret = _envInv === 'livret' || _envInv === 'livret_exo'
+  const enDefaut = inv.statut === 'Défaut'
 
   // Nouvelle logique pour les placements à rendement avec paiements saisis :
   // valeur théorique = accrual TOTAL depuis le début − paiements versés
@@ -2848,8 +2850,14 @@ function computeStats(inv, asOf) {
       solde += solde * tauxBrut * annees
     }
     if (ev.type === 'init') {
-      solde      += ev.montant - fraisAchatVal
-      capitalNet += ev.montant + fraisAchatVal  // frais d'entrée augmentent le coût de revient
+      solde      += ev.montant                  // valeur placée
+      capitalNet += ev.montant + fraisAchatVal  // coût de revient = montant + frais (comptés une seule fois)
+      investi    += ev.montant + fraisAchatVal
+    } else if (ev.type === 'interets' && isLivret) {
+      // Intérêts de livret : crédités sur le livret. Ils étaient déjà dans la valeur (intérêts courus) :
+      // on les compte en revenu perçu ET on les ajoute au capital, pour ne pas les compter deux fois.
+      revenus    += ev.montant
+      capitalNet += ev.montant
     } else if (ev.type === 'interets' || ev.type === 'dividende') {
       // Paiement versé : on le soustrait du solde théorique (il a quitté l'actif)
       // et on le comptabilise dans revenus
@@ -2867,6 +2875,7 @@ function computeStats(inv, asOf) {
     } else {
       const cfg = MVT_TYPES[ev.type] || { sign:+1, capital:false }
       let coutVente = 0
+      let ratioVente = 1   // part de la position vendue (même proportion pour la valeur et le capital)
       if (ev.type === 'vente') {
         // PV réalisée : prix vente - coût achat PRU
         recettesVentes += ev.montant
@@ -2874,13 +2883,13 @@ function computeStats(inv, asOf) {
         // runningQte = quantité détenue AVANT cette vente → PRU correct même pour positions entièrement vendues
         const qteTotale  = runningQte > 0 ? runningQte : (Number(inv.quantite) || 0)
         let   pruAuMoment = null
+        ratioVente = (qteVendue > 0 && qteTotale > 0)
+          ? Math.min(1, qteVendue / qteTotale)
+          : (solde > 0 ? Math.min(1, ev.montant / solde) : 1)
+        // Coût de revient des titres vendus (au prorata exact : évite les écarts d'arrondi)
+        coutVente = capitalNet > 0 ? Math.round(capitalNet * ratioVente * 100) / 100 : 0
         if (qteVendue > 0 && qteTotale > 0 && capitalNet > 0) {
           pruAuMoment = Math.round((capitalNet / qteTotale) * 100) / 100
-          // Coût de revient des titres vendus (au prorata exact : évite les écarts d'arrondi)
-          coutVente = Math.round(capitalNet * Math.min(1, qteVendue / qteTotale) * 100) / 100
-        } else {
-          const frac = solde > 0 ? Math.min(1, ev.montant / solde) : 1
-          coutVente = Math.max(0, capitalNet * frac)
         }
         const fraisDeVente = fraisVente[ev.date] || 0
         delete fraisVente[ev.date]   // appliqué une seule fois si plusieurs ventes le même jour
@@ -2898,7 +2907,19 @@ function computeStats(inv, asOf) {
                        : null
         })
       }
-      solde += cfg.sign * ev.montant
+      if (ev.type === 'vente') {
+        // La valeur perd la part vendue (au même prorata que le capital), pas le prix de vente encaissé
+        solde -= Math.max(0, solde) * ratioVente
+      } else if (ev.type === 'fraisachat') {
+        // frais d'achat ou de vente : ils touchent le coût (ou la plus-value), pas la valeur de l'actif
+      } else if (ev.type === 'frais') {
+        charges += ev.montant
+        solde   -= ev.montant   // actif sans cours : les frais réduisent la valeur (une seule fois)
+      } else {
+        solde += cfg.sign * ev.montant
+      }
+      if (ev.type === 'depot' || ev.type === 'achat') investi += ev.montant
+      if (ev.type === 'fraisachat' && !(_datesVente.has(ev.date) && !_datesAchat.has(ev.date))) investi += ev.montant
       if (ev.type === 'vente') {
         // Une vente retire du capital le COÛT DE REVIENT des titres vendus, pas le prix de vente :
         // sinon le PRU des ventes suivantes et le P&L des positions partiellement vendues sont faussés.
@@ -2921,18 +2942,24 @@ function computeStats(inv, asOf) {
     solde += solde * tauxBrut * annees
   }
 
+  // Projet en défaut : on ne compte pas d'intérêts non perçus, la valeur est plafonnée au capital restant
+  if (enDefaut) solde = Math.min(solde, Math.max(0, capitalNet))
+
   const mode = hasMvts ? (hasRend ? 'mvt+rend' : 'mvt') : 'rend'
   if (!asOf && inv.ticker && inv.quantite > 0 && inv.prixUnitaire > 0) {
     const liveVal = Math.round(inv.prixUnitaire * inv.quantite * 100) / 100
     const cn = Math.max(0, capitalNet)
-    const plRealLive = Math.round((recettesVentes - capitalEngageVentes)*100)/100; return { valeur: liveVal, capitalNet: cn, pl: liveVal - cn + revenus, plRealise: plRealLive, revenus, ventesDetail, mode, mvtCount: mvts.length, isLive: true }
+    const plRealLive = Math.round((recettesVentes - capitalEngageVentes)*100)/100
+    // P&L unique = latent + réalisé + revenus perçus − frais courants
+    return { valeur: liveVal, capitalNet: cn, pl: liveVal - cn + plRealLive + revenus - charges, plRealise: plRealLive,
+             revenus, charges, investi, ventesDetail, mode, mvtCount: mvts.length, isLive: true }
   }
 
   // Projection à l'échéance pour les placements à rendement fixe
   let valeurProjetee  = null  // capital + intérêts futurs (ce qui reste à recevoir)
   let interetsFuturs  = 0
   let totalEcheance   = null  // revenus déjà perçus + capital + intérêts futurs
-  if (hasRend && echeanceCourante && !asOf) {
+  if (hasRend && echeanceCourante && !asOf && !enDefaut) {
     const now2 = new Date()
     const ech2 = new Date(echeanceCourante + 'T23:59:59')
     if (ech2 > now2) {
@@ -2945,19 +2972,23 @@ function computeStats(inv, asOf) {
   }
 
   const plRealise = Math.round((recettesVentes - capitalEngageVentes) * 100) / 100
-  const plTotal   = solde - capitalNet + revenus
+  // P&L unique = latent (valeur − capital) + réalisé (ventes) + revenus perçus.
+  // Les frais courants sont déjà déduits de la valeur (solde) pour ces actifs sans cours.
+  const plTotal   = solde - capitalNet + plRealise + revenus
   return {
     valeur:         Math.max(0, solde),
     capitalNet:     Math.max(0, capitalNet),
     pl:             plTotal,
     plRealise:      plRealise,
+    charges,
+    investi,
     ventesDetail,
     revenus,
     valeurProjetee,
     interetsFuturs,
     totalEcheance,
     echeanceCourante,
-    tauxCourant:    tauxBrut * 100,
+    tauxCourant:    Math.round(tauxBrut * 1e6) / 1e4,   // arrondi : évite « 14.0%/an » pour 14 %
     mode, mvtCount: mvts.length
   }
 }
@@ -2997,102 +3028,83 @@ function getPeriodStart(period) {
   return null
 }
 
+// % de performance : P&L rapporté à l'argent réellement apporté (stable même après ventes/remboursements)
+function pctOf(pl, base) {
+  return base > 0 ? (pl >= 0 ? '+' : '') + ((pl / base) * 100).toFixed(2) + '%' : '—'
+}
+
+// Dernier prix de transaction connu (achat/vente) à une date — repli si le cours historique manque
+function lastTradePriceAt(inv, dateStr) {
+  const t = getMvts(inv.id).filter(m => (m.type==='achat'||m.type==='vente') && m.date <= dateStr && m.prixUnitaire)
+  return t.length ? Number(t[t.length-1].prixUnitaire) : null
+}
+
+// P&L = latent + réalisé (ventes) + revenus perçus − frais courants.
+// P&L d'une période = P&L total aujourd'hui − P&L total au début de la période :
+// chaque euro (plus-value, dividende, intérêt, vente) n'est compté que dans la période où il se produit.
 function plForPeriod(inv, period) {
   const today = computeStats(inv)
+  const base  = today.investi || today.capitalNet
   if (!period || period === 'total') {
-    // Pour les tickers : P&L = variation de cours (sans dividendes)
-    // Pour les autres (crowdfunding, livrets) : P&L = total return (intérêts inclus)
-    const plTot = (inv.resolvedTicker || today.isLive)
-      ? Math.round((today.valeur - today.capitalNet) * 100) / 100
-      : today.pl
-    return { pl: plTot, pct: fmtPct(today.valeur, today.capitalNet), canPeriod: true }
+    return { pl: today.pl, pct: pctOf(today.pl, base), canPeriod: true }
   }
 
+  const qteNow   = Number(inv.quantite) || 0
+  const aVendu   = getMvts(inv.id).some(m => m.type === 'vente')
+  const isMarche = !!inv.ticker && (qteNow > 0 || aVendu)
+
   if (period === '1j') {
-    // Titre coté : variation cours de clôture hier → cours actuel
-    if (inv.resolvedTicker && inv.prevClose > 0 && inv.quantite > 0 && inv.prixUnitaire > 0) {
-      // Si l'investissement a été acquis aujourd'hui : P&L depuis l'achat (pas depuis hier)
-      const todayStr1j = new Date().toISOString().slice(0,10)
-      if (inv.date && inv.date >= todayStr1j) {
-        const s1j = computeStats(inv)
-        const pctStr1j = s1j.capitalNet > 0 ? (s1j.pl>=0?'+':'')+((s1j.pl/s1j.capitalNet)*100).toFixed(2)+'%' : '—'
-        return { pl: s1j.pl, pct: pctStr1j, canPeriod: true }
+    if (isMarche) {
+      if (qteNow > 0 && inv.resolvedTicker && inv.prevClose > 0 && inv.prixUnitaire > 0) {
+        const todayStr1j = new Date().toISOString().slice(0,10)
+        if (inv.date && inv.date >= todayStr1j) return { pl: today.pl, pct: pctOf(today.pl, base), canPeriod: true }
+        const valHier = Math.round(inv.prevClose * qteNow * 100) / 100
+        const pl = Math.round((inv.prixUnitaire - inv.prevClose) * qteNow * 100) / 100
+        return { pl, pct: pctOf(pl, valHier), canPeriod: true }
       }
-      const valHier = Math.round(inv.prevClose * inv.quantite * 100) / 100
-      const valAuj  = Math.round(inv.prixUnitaire * inv.quantite * 100) / 100
-      const pl      = Math.round((valAuj - valHier) * 100) / 100
-      const pctStr  = valHier > 0 ? (pl >= 0 ? '+' : '') + ((pl / valHier) * 100).toFixed(2) + '%' : '—'
-      return { pl, pct: pctStr, canPeriod: true }
+      return { pl: 0, pct: '—', canPeriod: qteNow === 0 }   // position vendue : rien sur la journée
     }
-    // Investissement à rendement fixe (crowdfunding, livret…) : accrual journalier
-    const rendPct1j = Number(inv.rendement) || 0
-    if (rendPct1j > 0) {
-      // Si la date de début est dans le futur → pas encore démarré, P&L = 0
+    const rendPct1j = (today.tauxCourant != null ? today.tauxCourant : Number(inv.rendement)) || 0
+    if (rendPct1j > 0 && inv.statut !== 'Défaut') {
       const todayStr = new Date().toISOString().slice(0,10)
       if (inv.date && inv.date > todayStr) return { pl: 0, pct: '0.00%', canPeriod: true }
-      const pl1j = Math.round(today.capitalNet * (rendPct1j / 100) / 365 * 100) / 100
-      const pctStr1j = today.capitalNet > 0 ? (pl1j >= 0 ? '+' : '') + (rendPct1j / 365).toFixed(4) + '%' : '—'
-      return { pl: pl1j, pct: pctStr1j, canPeriod: true }
+      const pl1j = Math.round(today.valeur * (rendPct1j / 100) / 365 * 100) / 100
+      return { pl: pl1j, pct: pctOf(pl1j, today.valeur), canPeriod: true }
     }
-    // Pas de cours, pas de rendement : P&L 1J = 0 (valeur stable)
     return { pl: 0, pct: '0.00%', canPeriod: false }
   }
 
   const startDate = getPeriodStart(period)
-  if (inv.date && inv.date > startDate) {
-    const plFb = (inv.resolvedTicker || today.isLive)
-      ? Math.round((today.valeur - today.capitalNet) * 100) / 100
-      : today.pl
-    return { pl: plFb, pct: fmtPct(today.valeur, today.capitalNet), canPeriod: true }
-  }
+  // Position ouverte pendant la période : tout son P&L appartient à la période
+  if (inv.date && inv.date > startDate) return { pl: today.pl, pct: pctOf(today.pl, base), canPeriod: true }
   const atStart = computeStats(inv, startDate)
 
+  if (isMarche) {
+    // Titre détenu sans cours du jour : impossible de chiffrer la période honnêtement
+    if (qteNow > 0 && !today.isLive) return { pl: today.pl, pct: pctOf(today.pl, base), canPeriod: false }
+    const qte0 = qtyAtDate(inv, startDate)
+    let val0 = 0
+    if (qte0 > 0) {
+      const px0 = getPeriodStartPriceCached(inv.resolvedTicker, period) || lastTradePriceAt(inv, startDate)
+      if (!px0) return { pl: today.pl, pct: pctOf(today.pl, base), canPeriod: false }
+      val0 = Math.round(qte0 * px0 * 100) / 100
+    }
+    const plStart = val0 - atStart.capitalNet + (atStart.plRealise||0) + (atStart.revenus||0) - (atStart.charges||0)
+    const pl = Math.round((today.pl - plStart) * 100) / 100
+    return { pl, pct: pctOf(pl, val0 > 0 ? val0 : base), canPeriod: true }
+  }
+
   if (today.mode === 'manuel') {
-    if (inv.ticker && inv.prixUnitaire > 0) {
-      const approx = tickerValueAtDate(inv, period, startDate)
-      if (approx !== null) {
-        const plAtStart = approx - atStart.capitalNet
-        const pl = today.pl - plAtStart
-        const pctStr = approx > 0 ? (pl>=0?'+':'')+((pl/approx)*100).toFixed(2)+'%' : '—'
-        return { pl, pct: pctStr, canPeriod: true }
-      }
-      return { pl: today.pl, pct: fmtPct(today.valeur, today.capitalNet), canPeriod: false }
-    }
+    // Actif à valorisation manuelle : variation entre la valorisation au début et aujourd'hui
     if (atStart.hasSnap) {
-      const pl = today.valeur - atStart.valeur
-      const pctStr = atStart.valeur > 0 ? (pl>=0?'+':'')+((pl/atStart.valeur)*100).toFixed(2)+'%' : '—'
-      return { pl, pct: pctStr, canPeriod: true }
+      const pl = Math.round((today.valeur - atStart.valeur) * 100) / 100
+      return { pl, pct: pctOf(pl, atStart.valeur), canPeriod: true }
     }
-    const taux2 = (Number(inv.rendement)||0) / 100
-    if (Math.abs(taux2) > 0.0001) {
-      const periodMs2 = new Date() - new Date(startDate + 'T00:00:00')
-      const periodAns2 = periodMs2 / (365.25 * 24 * 3600 * 1000)
-      const pl2 = Math.round(today.capitalNet * taux2 * periodAns2 * 100) / 100
-      const pctStr2 = today.capitalNet > 0 ? (pl2>=0?'+':'')+((pl2/today.capitalNet)*100).toFixed(2)+'%' : '—'
-      return { pl: pl2, pct: pctStr2, canPeriod: true }
-    }
-    return { pl: today.pl, pct: fmtPct(today.valeur, today.capitalNet), canPeriod: false }
+    return { pl: 0, pct: '—', canPeriod: false }
   }
 
-  if (today.valeur === null || atStart.valeur === null) {
-    return { pl: today.pl, pct: fmtPct(today.valeur, today.capitalNet), canPeriod: false }
-  }
-
-  if (today.isLive) {
-    const approx = tickerValueAtDate(inv, period, startDate)
-    if (approx !== null) {
-      const plAtStart = approx - atStart.capitalNet
-      const pl = today.pl - plAtStart
-      const pctStr = approx > 0 ? (pl>=0?'+':'')+((pl/approx)*100).toFixed(2)+'%' : '—'
-      return { pl, pct: pctStr, canPeriod: true }
-    }
-    return { pl: today.pl, pct: fmtPct(today.valeur, today.capitalNet), canPeriod: false }
-  }
-
-  const pl = today.pl - atStart.pl
-  const base = atStart.capitalNet > 0 ? atStart.capitalNet : atStart.valeur
-  const pctStr = base > 0 ? (pl>=0?'+':'')+((pl/base)*100).toFixed(2)+'%' : '—'
-  return { pl, pct: pctStr, canPeriod: true }
+  const pl = Math.round((today.pl - atStart.pl) * 100) / 100
+  return { pl, pct: pctOf(pl, atStart.valeur > 0 ? atStart.valeur : base), canPeriod: true }
 }
 
 function tickerValueAtDate(inv, period, asOfDate) {
@@ -3589,7 +3601,7 @@ function aggByCat(period) {
     res[i.cat].capitalNet += s.capitalNet
     res[i.cat].valeur     += s.valeur
     res[i.cat].count++
-    res[i.cat].pl         += plP.pl
+    res[i.cat].pl         += plP.canPeriod ? plP.pl : 0
   }
   // Ajouter les liquidités — rattachées à la catégorie racine correspondante
   DB.categories.forEach(c => {
@@ -4597,17 +4609,16 @@ function buildInvCardGroup(list) {
       + (()=>{
         const isTotal = (invPeriod === 'total')
         if (isTotal) {
-          // Filtre "Tout" → P&L total depuis l'achat = valeur − capital (correspond à la plateforme)
+          // Filtre "Tout" → P&L total = latent + réalisé + revenus perçus (même chiffre sur tous les écrans)
           const sTotal    = computeStats(i)
-          const plCap     = Math.round((sTotal.valeur - sTotal.capitalNet + (sTotal.plRealise||0)) * 100) / 100
+          const plCap     = Math.round(sTotal.pl * 100) / 100
           const plCapPos  = plCap >= 0
           const plCapCol  = plCapPos ? 'var(--green)' : 'var(--red)'
           const plCapVal  = (plCapPos?'+':'')+fmt(plCap,2)
-          const plCapBase = sTotal.capitalNet > 0 ? sTotal.capitalNet : (getMvts(i.id).filter(m=>m.type==='achat'||m.type==='depot').reduce((s,m)=>s+Number(m.montant),0) + (Number(i.montant)||0))
-          const plCapPct  = plCapBase > 0 ? (plCapPos?'+':'')+(plCap/plCapBase*100).toFixed(2)+'%' : '—'
+          const plCapPct  = pctOf(plCap, sTotal.investi || sTotal.capitalNet)
           const rev       = sTotal.revenus || 0
           const revHtml   = rev > 0
-            ? '<div style="font-size:10px;color:var(--muted2);margin-top:2px">+ <span class="blur-num" style="color:var(--gold)">'+fmt(rev,2)+'</span> div./int.</div>'
+            ? '<div style="font-size:10px;color:var(--muted2);margin-top:2px">dont <span class="blur-num" style="color:var(--gold)">'+fmt(rev,2)+'</span> div./int.</div>'
             : ''
           return '<div class="inv-card-pl">'
             + '<div class="inv-pl-lbl">P&L total</div>'
@@ -4619,7 +4630,7 @@ function buildInvCardGroup(list) {
           // Autres filtres (1J, 1M…) → P&L de la période (variation de cours)
           // p, plPos, plVal, plColor, periodLabel déjà calculés plus haut
           const sTotal2   = computeStats(i)
-          const plTot     = Math.round((sTotal2.valeur - sTotal2.capitalNet + (sTotal2.plRealise||0)) * 100) / 100
+          const plTot     = Math.round(sTotal2.pl * 100) / 100
           const plTotPos  = plTot >= 0
           const totHtml   = '<div style="font-size:10px;color:var(--muted2);margin-top:2px">Total : <span class="blur-num" style="color:'+(plTotPos?'var(--green)':'var(--red)')+'">'+((plTotPos?'+':'')+fmt(plTot,2))+'</span></div>'
           return '<div class="inv-card-pl">'
@@ -4938,9 +4949,9 @@ function renderMvtPanel() {
   const tot  = { depot:0, retrait:0, interets:0, dividende:0, frais:0 }
   mvts.forEach(m => { if (tot[m.type]!==undefined) tot[m.type]+=Number(m.montant) })
 
-  const plVal   = Math.round((s.valeur - s.capitalNet + (s.plRealise||0))*100)/100
+  const plVal   = Math.round(s.pl*100)/100
   const plColor = plVal >= 0 ? 'var(--green)' : 'var(--red)'
-  const plPct   = s.capitalNet > 0 ? ((plVal/s.capitalNet)*100).toFixed(2)+'%' : '—'
+  const plPct   = pctOf(plVal, s.investi || s.capitalNet).replace(/^\+/, '')
   let kpiSub = ''
   if (inv.ticker && inv.prixUnitaire) {
     const ts = inv.lastTickerUpdate ? new Date(inv.lastTickerUpdate).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : ''
@@ -5206,6 +5217,12 @@ function deleteVal(valId) {
   persist(); renderValPanel(); toast('Snapshot supprimé', 'var(--red)')
 }
 
+// Frais d'achat/de vente créés par le formulaire pour un mouvement donné (même jour)
+function fraisLiesA(mvts, mvt) {
+  return mvts.filter(m => m.id !== mvt.id && m.type === 'fraisachat' && m.date === mvt.date
+    && /^Frais .*li[ée]s au mouvement/.test(m.note || ''))
+}
+
 function editMvt(mvtId) {
   const mvts = DB.mouvements[mvtInvId] || []
   const mvt  = mvts.find(m => m.id === mvtId)
@@ -5226,7 +5243,13 @@ function editMvt(mvtId) {
   if (montEl)  montEl.value    = mvt.montant
   if (dateEl)  dateEl.value    = mvt.date
   if (noteEl)  noteEl.value    = mvt.note || ''
-  if (fraisEl) fraisEl.value   = ''
+  const fraisExist = (mvt.type === 'achat' || mvt.type === 'vente') ? fraisLiesA(mvts, mvt) : []
+  if (fraisEl) fraisEl.value   = fraisExist.length ? fraisExist.reduce((s,m)=>s+Number(m.montant),0) : ''
+  if (mvt.type === 'prolongation') {
+    const ntEl = document.getElementById('mvt-f-nouveau-taux'), neEl = document.getElementById('mvt-f-nouvelle-echeance')
+    if (ntEl) ntEl.value = mvt.nouveauTaux ?? ''
+    if (neEl) neEl.value = mvt.nouvelleEcheance || ''
+  }
   if (qteEl && mvt.quantite)    qteEl.value  = mvt.quantite
   if (prixEl && mvt.prixUnitaire) prixEl.value = mvt.prixUnitaire
   // Mettre à jour le header et le bouton
@@ -5267,21 +5290,32 @@ function addMvt() {
     const idx = DB.mouvements[mvtInvId].findIndex(m => m.id === mvtEditId)
     if (idx >= 0) {
       const old = DB.mouvements[mvtInvId][idx]
-      // Inverser l'ancien delta quantité si nécessaire
-      if ((old.type === 'achat' || old.type === 'vente') && old.quantite > 0) {
-        const inv = investments().find(i => i.id === mvtInvId)
-        if (inv && inv.ticker) {
-          const oldDelta = old.type === 'achat' ? -old.quantite : +old.quantite
-          const newDelta = type === 'achat' ? qte : type === 'vente' ? -qte : 0
-          const newQte   = Math.max(0, Math.round(((Number(inv.quantite)||0) + oldDelta + newDelta) * 1e6) / 1e6)
-          setInvestments(investments().map(x => x.id === mvtInvId ? Object.assign({}, x, { quantite: newQte }) : x))
-        }
+      // Quantité : annuler l'effet de l'ancien mouvement puis appliquer le nouveau (quel que soit le type)
+      const inv = investments().find(i => i.id === mvtInvId)
+      const oldDelta = old.type === 'achat' ? -(old.quantite||0) : old.type === 'vente' ? +(old.quantite||0) : 0
+      const newDelta = type === 'achat' ? qte : type === 'vente' ? -qte : 0
+      if (inv && inv.ticker && (oldDelta || newDelta)) {
+        const newQte = Math.max(0, Math.round(((Number(inv.quantite)||0) + oldDelta + newDelta) * 1e6) / 1e6)
+        const statut = (newQte === 0 && type === 'vente') ? 'Remboursé'
+                     : (newQte > 0 && inv.statut === 'Remboursé') ? 'En cours' : inv.statut
+        setInvestments(investments().map(x => x.id === mvtInvId ? Object.assign({}, x, { quantite: newQte, statut }) : x))
       }
       const updated = { id: mvtEditId, type, montant, date, note }
       if (qte > 0)  updated.quantite    = qte
       if (prix > 0) updated.prixUnitaire = prix
+      if (type === 'prolongation') {
+        // Conserver/mettre à jour le nouveau taux et la nouvelle échéance (sinon la prolongation n'a plus d'effet)
+        const nt = parseFloat(document.getElementById('mvt-f-nouveau-taux')?.value)
+        const ne = document.getElementById('mvt-f-nouvelle-echeance')?.value
+        if (!isNaN(nt) && nt > 0) updated.nouveauTaux = nt
+        else if (old.nouveauTaux != null && document.getElementById('mvt-f-nouveau-taux') == null) updated.nouveauTaux = old.nouveauTaux
+        if (ne) updated.nouvelleEcheance = ne
+        else if (old.nouvelleEcheance && document.getElementById('mvt-f-nouvelle-echeance') == null) updated.nouvelleEcheance = old.nouvelleEcheance
+      }
+      // Frais : remplacer ceux déjà rattachés à ce mouvement (pas de doublon)
+      const anciensFrais = (old.type === 'achat' || old.type === 'vente') ? fraisLiesA(DB.mouvements[mvtInvId], old).map(m => m.id) : []
       DB.mouvements[mvtInvId][idx] = updated
-      // Frais saisis lors de l'édition → nouveau mouvement fraisachat
+      DB.mouvements[mvtInvId] = DB.mouvements[mvtInvId].filter(m => !anciensFrais.includes(m.id))
       if (frais > 0) {
         DB.mouvements[mvtInvId].push({ id:uid(), type:'fraisachat', montant:frais, date, note:"Frais liés au mouvement du "+fmtDate(date) })
       }
@@ -5368,11 +5402,14 @@ function deleteMvt(mvtId) {
     if (inv && inv.ticker) {
       const delta  = mvt.type === 'achat' ? -mvt.quantite : +mvt.quantite  // inverse du saveMvt
       const newQte = Math.max(0, Math.round(((Number(inv.quantite)||0) + delta) * 1e6) / 1e6)
-      setInvestments(investments().map(x => x.id === mvtInvId ? Object.assign({}, x, { quantite: newQte }) : x))
+      const statut = (newQte > 0 && inv.statut === 'Remboursé') ? 'En cours' : inv.statut
+      setInvestments(investments().map(x => x.id === mvtInvId ? Object.assign({}, x, { quantite: newQte, statut }) : x))
     }
   }
+  // Supprimer aussi les frais créés avec ce mouvement (sinon ils resteraient comptés seuls)
+  const fraisOrphelins = (mvt && (mvt.type === 'achat' || mvt.type === 'vente')) ? fraisLiesA(mvts, mvt).map(m => m.id) : []
 
-  DB.mouvements[mvtInvId] = mvts.filter(m => m.id !== mvtId)
+  DB.mouvements[mvtInvId] = mvts.filter(m => m.id !== mvtId && !fraisOrphelins.includes(m.id))
   persist(); renderMvtPanel(); toast('Mouvement supprimé', 'var(--red)')
 }
 function renderObjectif(currentVal) {
@@ -5897,8 +5934,8 @@ function renderAnaKPIBand() {
   const items = [
     { val: fmt(tA,0), lbl: 'Valeur totale', sub: null, col: 'var(--text)', blur: true },
     { val: fmt(tI,0), lbl: 'Capital investi', sub: null, col: 'var(--blue)', blur: true },
-    { val: (pvTotal>=0?'+':'')+fmt(pvTotal,0), lbl: 'P&L latent '+plLabel, sub: (pctGlob>=0?'+':'')+pctGlob.toFixed(1)+'%', col: plCol, blur: true },
-    { val: plRealTotal > 0 ? '+'+fmt(plRealTotal,0) : '—', lbl: 'Gains réalisés', sub: plRealTotal > 0 ? 'ventes & clôtures' : 'aucune vente', col: plRealTotal>0?'var(--green)':'var(--muted)', blur: plRealTotal>0 },
+    { val: (pvTotal>=0?'+':'')+fmt(pvTotal,0), lbl: 'P&L '+plLabel, sub: (pctGlob>=0?'+':'')+pctGlob.toFixed(1)+'%', col: plCol, blur: true },
+    { val: plRealTotal !== 0 ? (plRealTotal>0?'+':'')+fmt(plRealTotal,0) : '—', lbl: 'Gains réalisés', sub: plRealTotal !== 0 ? 'ventes & clôtures' : 'aucune vente', col: plRealTotal>0?'var(--green)':plRealTotal<0?'var(--red)':'var(--muted)', blur: plRealTotal!==0 },
     { val: fmt(rev12/12,0), lbl: 'Revenus/mois', sub: fmt(rev12,0)+' sur 12m', col: 'var(--blue)', blur: true },
     { val: nCours+'', lbl: 'En cours', sub: nRemb+' remboursés'+(nDef?' · '+nDef+' défaut':''), col: 'var(--green)', blur: false },
   ]
