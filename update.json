@@ -1,9 +1,13 @@
 {
-  "version": "3.14.41",
+  "version": "3.14.42",
   "notes": "",
   "date": "2026-09-29",
   "files": {
-    "installer": "https://github.com/unyti/heredit-releases/releases/download/3.14.41/Heredit.Setup.3.14.41.exe",
-    "portable": "https://github.com/unyti/heredit-releases/releases/download/3.14.41/Heredit-portable.exe"
+    "installer": "https://github.com/unyti/heredit-releases/releases/download/3.14.42/Heredit.Setup.3.14.42.exe",
+    "portable": "https://github.com/unyti/heredit-releases/releases/download/3.14.42/Heredit-portable.exe"
+  },
+  "sha256": {
+    "installer": "f7744ffa2c0e7dd93699f282090d0b9f51a927060587ec2d06d947c0fa3d4e23",
+    "portable": "39ebb01df0a84f79a743d6ea777f6dbbadbbe8d594596e9f9a0eeda48e676fba"
   }
 }
