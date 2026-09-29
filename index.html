@@ -1011,6 +1011,7 @@ textarea
               </div>
             </div>
           </div>
+          <div id="patrimoine-chart-summary" style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 18px;font-size:11px;margin:2px 0 6px"></div>
           <div class="chart-wrap">
             <svg id="patrimoine-chart-svg" width="100%" height="220"></svg>
             <div class="chart-tooltip" id="patrimoine-chart-tooltip"></div>
@@ -1903,7 +1904,7 @@ async function refreshAllTickers() {
 async function fetchTickerMonthlyHistory(ticker, range = '2y') {
   if (!DB.tickerHistoryCache) DB.tickerHistoryCache = {}
   const cached = DB.tickerHistoryCache[ticker]
-  if (cached && (Date.now() - (cached.ts||0)) < 60*60000 && Object.keys(cached.data||{}).length > 1) return cached.data
+  if (cached && cached.v === 2 && (Date.now() - (cached.ts||0)) < 60*60000 && Object.keys(cached.data||{}).length > 1) return cached.data
   const url = 'https://query1.finance.yahoo.com/v8/finance/chart/'
     + encodeURIComponent(ticker) + '?interval=1mo&range=' + range + '&includePrePost=false'
   try {
@@ -1914,14 +1915,23 @@ async function fetchTickerMonthlyHistory(ticker, range = '2y') {
     if (!result) return {}
     const timestamps = result.timestamp || []
     const closes     = result.indicators?.quote?.[0]?.close || []
+    // Chaque clé = date à partir de laquelle le cours est connu : la clôture du mois M est
+    // rangée au 1er du mois M+1 ; le mois en cours (non clôturé) est rangé à aujourd'hui.
+    // (Avant : l'heure locale de la bourse décalait les indices européens d'un mois.)
+    const today   = new Date().toISOString().slice(0,10)
+    const curMois = today.slice(0,7)
     const map = {}
     timestamps.forEach((ts, idx) => {
       if (closes[idx] == null) return
-      const d = new Date(ts * 1000)
-      const key = d.toISOString().slice(0,7) + '-01'
-      map[key] = closes[idx]
+      const d    = new Date((ts + 12*3600) * 1000)   // barre datée à minuit heure de la bourse : +12 h la ramène dans le bon mois, quel que soit le fuseau
+      const mois = d.toISOString().slice(0,7)
+      if (mois >= curMois) { map[today] = closes[idx]; return }
+      const suiv = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)).toISOString().slice(0,10)
+      map[suiv] = closes[idx]
     })
-    DB.tickerHistoryCache[ticker] = { ts: Date.now(), data: map }
+    const px = Number(result.meta?.regularMarketPrice)
+    if (px > 0) map[today] = px
+    DB.tickerHistoryCache[ticker] = { v: 2, ts: Date.now(), data: map }
     purgeCacheIfNeeded(DB.tickerHistoryCache, 80)
     return map
   } catch(e) { return {} }
@@ -2036,14 +2046,16 @@ function computePatrimoineSeries(rangeMonths) {
   }
   points.push(now)
 
-  const todayStr = now.toISOString().slice(0,10)
+  // Dates en heure locale (toISOString passerait en UTC : le 1er du mois devenait la veille)
+  const ymdLocal = d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')
+  const todayStr = ymdLocal(now)
   // Les liquidités n'ont pas d'historique : on les inclut UNIQUEMENT dans le point d'aujourd'hui
   // Les inclure dans les points passés gonflerait artificiellement l'historique
   const liqToday = liquiditesVisibles()
   const invVis   = investmentsVisibles()
 
   return points.map(pt => {
-    const dateStr = pt.toISOString().slice(0,10)
+    const dateStr = ymdLocal(pt)
     const isToday = dateStr === todayStr
     const liq = isToday ? liqToday : 0  // liquidités seulement sur le point actuel
 
@@ -2060,10 +2072,9 @@ function computePatrimoineSeries(rangeMonths) {
       const qty = i.resolvedTicker ? qtyAtDate(i, dateStr) : 0
       // Capital investi = argent apporté net des sommes déjà récupérées (même définition que le tableau de bord)
       const apport = s.valeur - s.pl
-      if (qty > 0 && DB.tickerHistoryCache?.[i.resolvedTicker]) {
+      if (qty > 0 && DB.tickerHistoryCache?.[i.resolvedTicker]?.v === 2) {
         const hist = DB.tickerHistoryCache[i.resolvedTicker].data
-        const monthKey = dateStr.slice(0,7) + '-01'
-        const price = hist[monthKey] || findNearestPrice(hist, dateStr)
+        const price = findNearestPrice(hist, dateStr)
         if (price) {
           valeur     += price * qty
           capitalNet += apport
@@ -2155,29 +2166,19 @@ function renderPatrimoineChart() {
     xSvg += `<text x="${x}" y="${H-6}" text-anchor="middle" fill="var(--muted2)" font-size="10" font-family="DM Mono,monospace">${lbl}</text>`
   }
 
-  // ── Benchmark : courbe base 100 optionnelle
-  let benchSvg = '', benchLegendSvg = ''
+  // ── Benchmark : mêmes versements placés dans l'indice
+  let benchSvg = ''
   window._benchNorm = null
-  if (benchmarkMode !== 'none') {
-    const bTicker = BENCH_TICKERS[benchmarkMode]
-    const bNorm0  = benchSeries(series, DB.tickerHistoryCache?.[bTicker]?.data)
-    if (bNorm0) {
-      {
-        const bNorm   = bNorm0
-        // Stocker pour le tooltip
-        window._benchNorm = bNorm
-        // Construire le path SVG (segments continus uniquement)
-        let bPath = ''
-        bNorm.forEach((v,i) => {
-          if (v === null) return
-          bPath += (bPath==='' ? 'M' : 'L') + xS(i).toFixed(1)+','+yS(v).toFixed(1)
-        })
-        const bColor = benchmarkMode === 'cac' ? 'var(--blue)' : 'var(--purple)'
-        const bLabel = (benchmarkMode === 'cac' ? 'CAC 40' : 'S&P 500') + ' — mêmes versements'
-        benchSvg = '<path d="'+bPath+'" fill="none" stroke="'+bColor+'" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.8"/>'
-        benchLegendSvg = '<text x="'+(PAD.left+120)+'" y="'+(PAD.top-4)+'" fill="'+bColor+'" font-size="10" font-family="Outfit,sans-serif">- - '+bLabel+'</text>'
-      }
-    }
+  const bColor = benchmarkMode === 'cac' ? 'var(--gold)' : 'var(--purple)'
+  const bName  = benchmarkMode === 'cac' ? 'CAC 40' : 'S&P 500'
+  if (benchmarkMode !== 'none' && _bNormPre.length) {
+    window._benchNorm = _bNormPre
+    let bPath = ''
+    _bNormPre.forEach((v,i) => {
+      if (v === null) return
+      bPath += (bPath==='' ? 'M' : 'L') + xS(i).toFixed(1)+','+yS(v).toFixed(1)
+    })
+    benchSvg = '<path d="'+bPath+'" fill="none" stroke="'+bColor+'" stroke-width="2" stroke-linejoin="round"/>'
   }
 
   const areaPath = series.map((p,i) => (i===0?'M':'L') + xS(i).toFixed(1)+','+yS(p.valeur).toFixed(1)).join(' ')
@@ -2188,14 +2189,27 @@ function renderPatrimoineChart() {
     + ' ' + series.slice().reverse().map((p,i) => (i===0?'L':'L') + xS(series.length-1-i).toFixed(1)+','+yS(p.capitalNet).toFixed(1)).join(' ') + ' Z'
 
   const lastPl = series[series.length-1].valeur - series[series.length-1].capitalNet
-  const lineColor   = lastPl >= 0 ? 'var(--green)' : 'var(--red)'
+  const lineColor   = 'var(--blue)'
   const gradId      = 'grad_pat'
 
+  // ── Résumé au-dessus du graphique : légende + gain de la période (hors versements)
   const first = series[0], last2 = series[series.length-1]
-  const delta = last2.valeur - first.valeur
-  const deltaPct = first.valeur > 0 ? ((delta/first.valeur)*100).toFixed(1) : '0'
-  const deltaStr = (delta>=0?'+':'')+fmt(delta)+' ('+( delta>=0?'+':'')+deltaPct+'%)'
-  const deltaColor = delta >= 0 ? 'var(--green)' : 'var(--red)'
+  const sgn = v => (v >= 0 ? '+' : '')
+  const fPct = p => p === null ? '' : ' <span style="font-size:10px">(' + sgn(p) + p.toFixed(1).replace('.', ',') + '\u00a0%)</span>'
+  const gP  = gainPeriode(first.valeur, last2.valeur, first.capitalNet, last2.capitalNet)
+  const leg = (col, dash, txt) => '<span style="display:inline-flex;align-items:center;gap:5px;color:var(--muted)">'
+    + '<svg width="18" height="6"><line x1="0" y1="3" x2="18" y2="3" stroke="'+col+'" stroke-width="2"'+(dash?' stroke-dasharray="4,3"':'')+'/></svg>'+txt+'</span>'
+  let legende = leg('var(--blue)', false, 'Patrimoine') + leg('var(--muted2)', true, 'Capital investi')
+  let chiffres = '<span style="color:var(--muted)">Versements\u00a0: <span class="blur-num" style="font-family:DM Mono,monospace;color:var(--text)">'+sgn(last2.capitalNet-first.capitalNet)+fmt(last2.capitalNet-first.capitalNet)+'</span></span>'
+    + '<span style="color:var(--muted)">Gain\u00a0: <span class="blur-num" style="font-family:DM Mono,monospace;font-weight:600;color:'+(gP.gain>=0?'var(--green)':'var(--red)')+'">'+sgn(gP.gain)+fmt(gP.gain)+fPct(gP.pct)+'</span></span>'
+  if (window._benchNorm) {
+    const b = window._benchNorm, i0 = b.findIndex(v => v !== null)
+    const gB = gainPeriode(b[i0], b[b.length-1], series[i0].capitalNet, last2.capitalNet)
+    legende += leg(bColor, false, bName + ' (mêmes versements)')
+    chiffres += '<span style="color:var(--muted)">'+bName+'\u00a0: <span class="blur-num" style="font-family:DM Mono,monospace;color:'+bColor+'">'+fmt(b[b.length-1])+' · '+sgn(gB.gain)+fmt(gB.gain)+fPct(gB.pct)+'</span></span>'
+  }
+  const sumEl = document.getElementById('patrimoine-chart-summary')
+  if (sumEl) sumEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+legende+'</div><div style="display:flex;flex-wrap:wrap;gap:4px 14px">'+chiffres+'</div>'
 
   el.setAttribute('viewBox', `0 0 ${W} ${H}`)
   el.setAttribute('height', H)
@@ -2213,7 +2227,7 @@ function renderPatrimoineChart() {
     <g clip-path="url(#chart-clip)">
       <path d="${plZonePath}" fill="${lastPl>=0?'var(--green)':'var(--red)'}" opacity="0.08"/>
       <path d="${areaPath}" fill="url(#${gradId})"/>
-      <path d="${capPath}" fill="none" stroke="var(--border2)" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <path d="${capPath}" fill="none" stroke="var(--muted2)" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.8"/>
       <path d="${series.map((p,i)=>(i===0?'M':'L')+xS(i).toFixed(1)+','+yS(p.valeur).toFixed(1)).join(' ')}" fill="none" stroke="${lineColor}" stroke-width="2"/>
       ${(()=>{
         // Marqueurs dépôts : points où le capitalNet augmente significativement
@@ -2229,9 +2243,6 @@ function renderPatrimoineChart() {
       ${benchSvg}
     </g>
     ${xSvg}
-    <text x="${W-PAD.right}" y="${PAD.top-4}" text-anchor="end" fill="${deltaColor}" font-size="11" font-family="DM Mono,monospace" font-weight="600">${deltaStr}</text>
-    <text x="${PAD.left+8}" y="${PAD.top-4}" fill="var(--muted)" font-size="10" font-family="Outfit,sans-serif">— — Capital investi</text>
-    ${benchLegendSvg}
     <rect id="chart-hover-line" x="0" y="${PAD.top}" width="1" height="${cH}" fill="var(--border2)" opacity="0" pointer-events="none"/>
     <rect x="${PAD.left}" y="${PAD.top}" width="${cW}" height="${cH}" fill="transparent" id="chart-overlay"
       onmousemove="chartHover(event,${JSON.stringify(series).replace(/"/g,'&quot;')},${PAD.left},${cW},${PAD.top},${cH},${W})"
@@ -2260,12 +2271,11 @@ function chartHover(e, series, padL, cW, padT, cH, W) {
   const plStr = (pl>=0?'+':'')+fmt(pl,2)
   const plPct = p.capitalNet>0 ? (pl>=0?'+':'')+((pl/p.capitalNet)*100).toFixed(1)+'%' : '—'
   const bVal  = window._benchNorm?.[Math.max(0,Math.min(idx,series.length-1))]
-  const bBase0 = window._benchNorm?.find(v => v !== null)
-  const bPct  = (bVal && bBase0) ? ((bVal/bBase0-1)*100).toFixed(1) : null
-  const bColor = benchmarkMode === 'cac' ? 'var(--blue)' : 'var(--purple)'
+  const bPct  = (bVal !== null && bVal !== undefined) ? true : null
+  const bColor = benchmarkMode === 'cac' ? 'var(--gold)' : 'var(--purple)'
   const bLabel = benchmarkMode === 'cac' ? 'CAC 40' : benchmarkMode === 'sp500' ? 'S&P 500' : ''
   const mono = 'font-family:DM Mono,monospace'
-  let ttHtml = '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">'+p.date+'</div>'
+  let ttHtml = '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">'+fmtDate(p.date)+'</div>'
     + '<div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:2px">'
     +   '<span style="color:var(--muted2);font-size:11px">Valeur</span>'
     +   '<span class="blur-num" style="'+mono+';font-size:12px;font-weight:600">'+fmt(p.valeur,2)+'</span>'
@@ -2281,7 +2291,11 @@ function chartHover(e, series, padL, cW, padT, cH, W) {
   if (bPct !== null) {
     ttHtml += '<div style="display:flex;justify-content:space-between;gap:16px;padding-top:4px;border-top:1px solid var(--border)">'
       + '<span style="font-size:11px;color:'+bColor+'">'+bLabel+'</span>'
-      + '<span style="'+mono+';font-size:12px;color:'+bColor+'">'+(bPct>=0?'+':'')+bPct+'%</span>'
+      + '<span class="blur-num" style="'+mono+';font-size:12px;color:'+bColor+'">'+fmt(bVal)+'</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;gap:16px">'
+      + '<span style="font-size:10px;color:var(--muted2)">Écart avec vous</span>'
+      + '<span class="blur-num" style="'+mono+';font-size:11px;color:'+(p.valeur>=bVal?'var(--green)':'var(--red)')+'">'+(p.valeur>=bVal?'+':'')+fmt(p.valeur-bVal)+'</span>'
       + '</div>'
   }
   tt.innerHTML = ttHtml
@@ -4183,8 +4197,8 @@ function _computeSparklineRaw(inv, period, nMonthsFallback) {
         }
         if (val === null) {
           // Fallback mensuel
-          const hist = DB.tickerHistoryCache?.[inv.resolvedTicker]?.data
-          if (hist) { const p = findNearestPrice(hist, dateStr); if (p) val = p * qtyAtDate(inv, dateStr) }
+          const hc = DB.tickerHistoryCache?.[inv.resolvedTicker]
+          if (hc?.v === 2) { const p = findNearestPrice(hc.data, dateStr); if (p) val = p * qtyAtDate(inv, dateStr) }
         }
       }
       if (val === null) val = computeStats(inv, dateStr).valeur
@@ -4205,7 +4219,7 @@ function _computeSparklineRaw(inv, period, nMonthsFallback) {
       if (inv.date && inv.date > dateStr) { val = null }
       else if (inv.resolvedTicker && inv.quantite > 0 && DB.tickerHistoryCache?.[inv.resolvedTicker]) {
         const hist  = DB.tickerHistoryCache[inv.resolvedTicker].data
-        const price = findNearestPrice(hist, dateStr)
+        const price = DB.tickerHistoryCache[inv.resolvedTicker].v === 2 ? findNearestPrice(hist, dateStr) : null
         if (price) val = price * qtyAtDate(inv, dateStr)
       }
       if (val === null) val = computeStats(inv, dateStr).valeur
@@ -4228,7 +4242,7 @@ function _computeSparklineRaw(inv, period, nMonthsFallback) {
       if (inv.date && inv.date > dateStr) { val = null }
       else if (inv.resolvedTicker && inv.quantite > 0 && DB.tickerHistoryCache?.[inv.resolvedTicker]) {
         const hist  = DB.tickerHistoryCache[inv.resolvedTicker].data
-        const price = hist[monthKey] || findNearestPrice(hist, dateStr)
+        const price = DB.tickerHistoryCache[inv.resolvedTicker].v === 2 ? findNearestPrice(hist, dateStr) : null
         if (price) val = price * qtyAtDate(inv, dateStr)
       }
       if (val === null) val = computeStats(inv, dateStr).valeur
@@ -6126,18 +6140,26 @@ async function setBenchmark(b) {
 
 // Comparaison honnête à un indice : on investit dans l'indice les MÊMES sommes, aux MÊMES dates,
 // que dans le patrimoine (variations du capital investi). La courbe montre ce que ces versements vaudraient.
+// Départ : le patrimoine du premier point est « placé » dans l'indice ; ensuite chaque versement
+// (hausse du capital investi) achète des parts, chaque retrait en revend.
 function benchSeries(series, hist) {
   if (!hist || Object.keys(hist).length < 2) return null
-  let parts = 0, capPrec = 0, dernierPrix = null
+  let parts = null, capPrec = 0
   const out = series.map(pt => {
-    const p = hist[pt.date.slice(0,7)+'-01'] || findNearestPrice(hist, pt.date)
-    if (p) dernierPrix = p
-    if (!dernierPrix) return null
-    parts  += (pt.capitalNet - capPrec) / dernierPrix
-    capPrec = pt.capitalNet
-    return Math.round(Math.max(0, parts) * dernierPrix * 100) / 100
+    const p = findNearestPrice(hist, pt.date)
+    if (!p) return null
+    if (parts === null) { parts = pt.valeur / p; capPrec = pt.capitalNet }
+    else { parts += (pt.capitalNet - capPrec) / p; capPrec = pt.capitalNet }
+    return Math.round(Math.max(0, parts) * p * 100) / 100
   })
   return out.filter(v => v !== null).length >= 2 ? out : null
+}
+// Gain d'une courbe entre deux points, hors versements : Δvaleur − Δcapital investi.
+// % rapporté à la valeur de départ + la moitié des versements nets (méthode de Dietz simplifiée).
+function gainPeriode(v0, v1, c0, c1) {
+  const gain = (v1 - v0) - (c1 - c0)
+  const base = v0 + (c1 - c0) / 2
+  return { gain, pct: base > 0 ? gain / base * 100 : null }
 }
 
 function renderAnaCatEvo() {
@@ -6257,7 +6279,9 @@ function renderAnaRealised() {
   const openIds   = (el.dataset.open || '').split(',').filter(Boolean)
   const hidden    = rows.length - LIMIT
 
-  html += '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+  // Largeurs fixes : la mise en page ne bouge pas quand on affiche toutes les positions
+  html += '<table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed">'
+    + '<colgroup>' + [24,8,10,10,12,12,10,14].map(w => '<col style="width:'+w+'%">').join('') + '</colgroup>'
     + '<thead><tr>'
     + ['Position','Titres vendus','PRU','Prix vente','Capital récupéré','Cession / perte','Revenus','Total Return'].map((h,j) =>
         '<th'+(j===3?' title="Plusieurs ventes : moyenne pondérée par le nombre de titres"':j===4?' title="Retraits et remboursements de capital : de l’argent qui vous revient, pas un gain"':j===6?' title="Dividendes, intérêts et bonus"':'')+' style="text-align:'+(j===0?'left':'right')+';padding:4px 8px;font-size:10px;'
@@ -6300,7 +6324,7 @@ function renderAnaRealised() {
           + '<td></td><td></td><td></td></tr>'
         ).join('') : ''
         return '<tr style="border-bottom:1px solid var(--border)">'
-          + '<td style="padding:8px">'+nomCell+'</td>'
+          + '<td style="padding:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(r.i.nom)+'">'+nomCell+'</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:var(--muted)">'
             + (qteVendue > 0 ? fmtQ(qteVendue) : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:var(--muted)">'
@@ -6312,7 +6336,7 @@ function renderAnaRealised() {
             + (r.totalRetire > 0 ? fmt(r.totalRetire,0) + (r.retraits.length > 1 ? ' <span style="font-size:10px;color:var(--muted)">('+r.retraits.length+')</span>' : '') : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:'+cCol+'">'
             + (r.plCession !== 0 ? (r.plCession>0?'+':'')+fmt(r.plCession,0) : '—') + '</td>'
-          + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:var(--gold)">'
+          + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:'+(r.totalRevenu > 0 ? 'var(--gold)' : 'var(--muted2)')+'">'
             + (r.totalRevenu > 0 ? '+'+fmt(r.totalRevenu,0) : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;font-weight:700;color:'+tCol+'">'
             + (r.totalGain>=0?'+':'')+fmt(r.totalGain,0) + '</td>'

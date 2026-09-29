@@ -1,5 +1,18 @@
 # CHANGELOG — Heredit
 
+## v3.14.48 — 2026-09-30
+
+### Analyses › Évolution du patrimoine
+- **Cours mensuels décalés d'un mois (corrigé)** : l'heure locale de la bourse (Paris) rangeait chaque clôture mensuelle du CAC 40 et des actions françaises dans le mois précédent, et chaque point du graphique utilisait la clôture de la fin du mois suivant. La courbe du patrimoine et celle de l'indice étaient donc décalées. Chaque point prend désormais la dernière clôture connue à sa date (les anciennes données en cache sont ignorées et rechargées).
+- **Comparaison CAC 40 / S&P 500 lisible** : courbe pleine et colorée (or pour le CAC 40, violet pour le S&P 500), départ à la valeur de votre patrimoine au début de la période, puis mêmes versements aux mêmes dates.
+- **Résumé au-dessus du graphique** : versements de la période, gain hors versements en € et en % (au lieu d'une variation qui comptait les versements comme de la performance, ex. « +119 % »), et valeur finale + gain de l'indice avec les mêmes versements.
+- **Info-bulle** : valeur de l'indice en € et écart avec votre patrimoine, date lisible. Courbe du patrimoine en bleu, capital investi en pointillés gris.
+
+### Analyses › Gains & pertes réalisés
+- Largeur des colonnes fixe : la mise en page ne bouge plus quand on affiche toutes les positions.
+
+---
+
 ## v3.14.47 — 2026-09-30
 
 ### Capital investi : l'argent réellement apporté
