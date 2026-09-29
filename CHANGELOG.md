@@ -1,5 +1,26 @@
 # CHANGELOG — Heredit
 
+## v3.14.43 — 2026-09-29
+
+### Un seul patrimoine, partout — lot 3
+- **Même chiffre sur tous les écrans** : tableau de bord, tuiles et donut des catégories, Analyses, Emprunts et dernier point de la courbe utilisent une seule définition. Avant, trois valeurs différentes coexistaient (ex. 234 450 € / 234 839 € / 234 731 €).
+- **Définition** : valeur actuelle des titres, de l'immobilier… ; pour les placements à rendement, capital restant sans les intérêts courus non versés (affichés à part, « d'intérêts à recevoir »). Espèces des catégories incluses.
+- **Catégories masquées** respectées partout (Analyses et Emprunts compris) ; la mention « hors Immobilier » s'affiche sous le patrimoine.
+- **Courbe d'évolution** : mêmes règles aux dates passées ; un titre vendu est valorisé à son cours tant qu'il était détenu.
+- **Analyses** : la « Performance (frais inclus) » ne retranche plus une deuxième fois les frais d'achat ni une estimation des frais de gestion ; TRI moyen pondéré par les montants investis.
+
+### Échéances cohérentes
+- Montant attendu à l'échéance identique sur la carte (« Total final »), dans Finances, dans Analyses et sur le tableau de bord (qui affichait la valeur actuelle). Tri sur l'échéance effective après prolongation.
+
+### Interface
+- **Historique** : lecture unique du point de vue de la position — placé (+), récupéré (−), revenus, frais — et résumé « Placé / Récupéré / Revenus / Frais ». Les frais saisis le jour d'une vente sont libellés « Frais de vente ».
+- **Cartes** : « Reste à recevoir » en neutre (ce n'est pas un gain) ; « dont X € d'intérêts courus » sous la valeur ; les actifs sans cours (PE, immobilier…) affichent leurs valorisations au lieu d'une zone vide ; une position clôturée affiche « Clôturée » au lieu de 0,00 €.
+- **Panneau des mouvements** : taux effectif après prolongation dans l'en-tête ; confirmation avant suppression d'un mouvement.
+- **Taille minimale d'écran** : les 4 indicateurs du tableau de bord passent en 2 × 2 au lieu de s'empiler.
+- Taux affiché avec ses décimales réelles (13,25 %/an au lieu de 13,3 %/an).
+
+---
+
 ## v3.14.42 — 2026-09-29
 
 ### Sécurité — lot 2

@@ -616,8 +616,8 @@ textarea
   #refresh-label { display: none }
   #btn-refresh-global { min-width: auto }
 
-  /* KPI grid — héros + secondaires sur 1 colonne si peu de place */
-  #kpi-grid { grid-template-columns: minmax(0, 280px) 1fr; gap: 10px }
+  /* KPI : 4 colonnes égales conservées */
+  #kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px }
 
   /* Cartes investissement — colonnes légèrement réduites */
   .inv-card-id   { flex: 0 0 185px }
@@ -656,12 +656,9 @@ textarea
   #topbar button[onclick="openSearch()"] span[style*="muted"] { display: none }
   #topbar button[onclick="openSearch()"] { min-width: auto; padding: 5px 8px }
 
-  /* KPI grid — colonne unique */
-  #kpi-grid { grid-template-columns: 1fr }
-  .kpi-hero .kpi-val { font-size: 28px }
-
-  /* KPI secondaires — 3 colonnes maintenues */
-  .kpi-sec-grid { grid-template-columns: repeat(3, 1fr) }
+  /* KPI : 2 × 2 sur petit écran (au lieu de 4 blocs empilés) */
+  #kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) }
+  .kpi-hero .kpi-val { font-size: 26px }
 
   /* Cartes investissement — colonnes réduites */
   .inv-card-id   { flex: 0 0 160px }
@@ -2021,7 +2018,8 @@ function computePatrimoineSeries(rangeMonths) {
   const todayStr = now.toISOString().slice(0,10)
   // Les liquidités n'ont pas d'historique : on les inclut UNIQUEMENT dans le point d'aujourd'hui
   // Les inclure dans les points passés gonflerait artificiellement l'historique
-  const liqToday = DB.categories.reduce((s,c) => s + (Number(c.liquidites)||0), 0)
+  const liqToday = liquiditesVisibles()
+  const invVis   = investmentsVisibles()
 
   return points.map(pt => {
     const dateStr = pt.toISOString().slice(0,10)
@@ -2030,27 +2028,27 @@ function computePatrimoineSeries(rangeMonths) {
 
     // Dernier point (aujourd'hui) : cours temps réel pour cohérence avec le KPI
     if (isToday) {
-      const valeur     = inv.reduce((s,i) => s + computeValeur(i), 0)
-      const capitalNet = inv.reduce((s,i) => s + computeStats(i).capitalNet, 0)
-      return { date: dateStr, valeur: Math.round((valeur+liq)*100)/100, capitalNet: Math.round((capitalNet+liq)*100)/100 }
+      // Même chiffre que le patrimoine du tableau de bord
+      const P = patrimoine()
+      return { date: dateStr, valeur: Math.round(P.brut*100)/100, capitalNet: Math.round(P.capital*100)/100 }
     }
     let valeur = 0, capitalNet = 0
-    for (const i of inv) {
+    for (const i of invVis) {
       if (i.date && i.date > dateStr) continue
       const s = computeStats(i, dateStr)
-      if (i.resolvedTicker && i.quantite > 0 && DB.tickerHistoryCache?.[i.resolvedTicker]) {
+      const qty = i.resolvedTicker ? qtyAtDate(i, dateStr) : 0
+      if (qty > 0 && DB.tickerHistoryCache?.[i.resolvedTicker]) {
         const hist = DB.tickerHistoryCache[i.resolvedTicker].data
         const monthKey = dateStr.slice(0,7) + '-01'
         const price = hist[monthKey] || findNearestPrice(hist, dateStr)
         if (price) {
-          const qty = qtyAtDate(i, dateStr)
           valeur     += price * qty
-          capitalNet += s.capitalNet
+          capitalNet += Math.max(0, s.capitalNet)
           continue
         }
       }
-      valeur     += s.valeur
-      capitalNet += s.capitalNet
+      valeur     += estARendement(s) ? Math.min(s.valeur, Math.max(0, s.capitalNet)) : s.valeur
+      capitalNet += Math.max(0, s.capitalNet)
     }
     return { date: dateStr, valeur: Math.round(valeur*100)/100, capitalNet: Math.round(capitalNet*100)/100 }
   })
@@ -2489,7 +2487,7 @@ async function boot() {
     const snapInv = DB.investments[pid] || []
     const snap = {
       date: today,
-      valeur:     Math.round(snapInv.reduce((s,i)=>s+computeStats(i).valeur,0)*100)/100,
+      valeur:     Math.round(snapInv.reduce((s,i)=>s+valeurPatrimoine(i),0)*100)/100,
       capitalNet: Math.round(snapInv.reduce((s,i)=>s+computeStats(i).capitalNet,0)*100)/100
     }
     const hist = DB.patrimoineHistory[pid]
@@ -2591,7 +2589,7 @@ async function persist() {
   const inv   = DB.investments[pid] || []
   const snap = {
     date:       today,
-    valeur:     Math.round(inv.reduce((s,i)=>s+computeStats(i).valeur,0)*100)/100,
+    valeur:     Math.round(inv.reduce((s,i)=>s+valeurPatrimoine(i),0)*100)/100,
     capitalNet: Math.round(inv.reduce((s,i)=>s+computeStats(i).capitalNet,0)*100)/100
   }
   const hist  = DB.patrimoineHistory[pid]
@@ -3018,6 +3016,46 @@ function getTauxEff(inv) {
 }
 
 function computeValeur(inv) { return computeStats(inv).valeur }
+
+// ── Patrimoine : UNE seule définition, utilisée par tous les écrans ─────────────
+// Valeur retenue dans le patrimoine = ce qui est réellement détenu :
+//  - titres, immobilier, métaux… : valeur actuelle
+//  - placements à rendement (crowdfunding, livrets) : capital restant, sans les intérêts courus non versés
+//    (ceux-ci sont affichés à part, « à recevoir »)
+function estARendement(s) { return s.mode === 'rend' || s.mode === 'mvt+rend' }
+function valeurPatrimoine(inv, asOf) {
+  const s = computeStats(inv, asOf)
+  return estARendement(s) ? Math.min(s.valeur, Math.max(0, s.capitalNet)) : s.valeur
+}
+function interetsCourus(inv) {
+  const s = computeStats(inv)
+  return estARendement(s) ? Math.max(0, s.valeur - Math.max(0, s.capitalNet)) : 0
+}
+function catsMasquees() { return DB.settings.hiddenCats || [] }
+function catRacine(catId) {
+  let c = DB.categories.find(x => x.id === catId), n = 0
+  while (c && c.parentId && n++ < 5) c = DB.categories.find(x => x.id === c.parentId) || c
+  return c ? c.id : catId
+}
+function investmentsVisibles() { const h = catsMasquees(); return investments().filter(i => !h.includes(i.cat)) }
+function liquiditesVisibles() {
+  const h = catsMasquees()
+  return DB.categories.reduce((s,c) => s + (h.includes(catRacine(c.id)) ? 0 : (Number(c.liquidites)||0)), 0)
+}
+function patrimoine() {
+  const inv  = investmentsVisibles()
+  const liq  = liquiditesVisibles()
+  const brut = inv.reduce((s,i) => s + valeurPatrimoine(i), 0) + liq
+  const courus  = inv.reduce((s,i) => s + interetsCourus(i), 0)
+  const capital = inv.reduce((s,i) => s + Math.max(0, computeStats(i).capitalNet), 0) + liq
+  const dettesTot = dettes().reduce((s,d) => s + Number(d.restant||0), 0)
+  const masquees  = catsMasquees().map(id => (DB.categories.find(c => c.id === id)||{}).label).filter(Boolean)
+  return { brut, courus, liquidites: liq, capital, dettes: dettesTot, net: brut - dettesTot, masquees }
+}
+function noteMasquees() {
+  const m = catsMasquees().map(id => (DB.categories.find(c => c.id === id)||{}).label).filter(Boolean)
+  return m.length ? 'hors ' + m.join(', ') : ''
+}
 
 // Somme des liquidités de toutes les catégories racines
 function totalLiquidites() {
@@ -3612,7 +3650,7 @@ function aggByCat(period) {
     const s   = computeStats(i)
     const plP = plForPeriod(i, period)
     res[i.cat].capitalNet += s.capitalNet
-    res[i.cat].valeur     += s.valeur
+    res[i.cat].valeur     += valeurPatrimoine(i)
     res[i.cat].count++
     res[i.cat].pl         += plP.canPeriod ? plP.pl : 0
   }
@@ -3666,7 +3704,7 @@ function renderDashEcheances() {
     return '<div class="dash-ech-row">'
       + '<div style="width:4px;height:32px;border-radius:2px;flex-shrink:0;background:' + (cat?.color||'var(--border2)') + '"></div>'
       + '<div style="flex:1;min-width:0"><div class="dash-ech-name">' + i.nom + '</div>'
-      + '<div class="dash-ech-sub">' + fmtDate(getEcheanceEff(i)) + ' · <span class="blur-num">' + fmt(s.valeur,0) + '</span></div></div>'
+      + '<div class="dash-ech-sub">' + fmtDate(getEcheanceEff(i)) + ' · <span class="blur-num">' + fmt(totalAttenduEcheance(i),0) + '</span> attendus</div></div>'
       + '<div class="dash-ech-days" style="color:' + col + '">' + duStr + '</div>'
       + '</div>'
   }).join('')
@@ -3712,23 +3750,14 @@ function renderDashboard() {
   const isNet   = DB.settings.patrimoineMode === 'net'
   const visInv  = inv.filter(i => !hidden.includes(i.cat))
 
-  const tI      = visInv.reduce((s,d) => s + computeStats(d).capitalNet, 0) + totalLiquidites()
+  const _P      = patrimoine()
+  const tI      = _P.capital
   // Patrimoine cash : intérêts courus (non versés) exclus pour les actifs à rendement fixe
-  const tA_cash = visInv.reduce((s,d) => {
-    const st = computeStats(d)
-    // Intérêts versés = sortis de l'actif (ils vivent là où ils ont été placés ensuite) → exclus
-    if (st.mode === 'rend' || st.mode === 'mvt+rend') return s + Math.min(computeValeur(d), st.capitalNet)
-    return s + computeValeur(d)
-  }, 0) + totalLiquidites()
-  // Intérêts courus non versés (crowdfunding, livrets, obligations…)
-  const tA_accrued = visInv.reduce((s,d) => {
-    const st = computeStats(d)
-    if (st.mode === 'rend' || st.mode === 'mvt+rend') return s + Math.max(0, computeValeur(d) - st.capitalNet)
-    return s
-  }, 0)
+  const tA_cash    = _P.brut
+  const tA_accrued = _P.courus
   const tA      = tA_cash
-  const totalDettes = dettes().reduce((s,d) => s + Number(d.restant||0), 0)
-  const tNet    = tA - totalDettes
+  const totalDettes = _P.dettes
+  const tNet    = _P.net
   const displayVal = isNet ? tNet : tA
   const pvTotal = visInv.reduce((s,d) => { const p=plForPeriod(d,dashPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
 
@@ -3754,7 +3783,8 @@ function renderDashboard() {
     +   '<div><div class="kpi-lbl">'+(isNet?'Patrimoine net':'Patrimoine brut')+'</div>'
     +     '<div class="kpi-val kpi-anim blur-num" style="color:var(--blue);font-family:\'DM Serif Display\',serif;font-size:40px;line-height:1;letter-spacing:-1.5px">'+fmt(displayVal)+'</div>'
     +     '<div class="kpi-sub">'+_heroSubHtml+'</div>'
-    +     (tA_accrued > 0 ? '<div class="kpi-accrued">+ <span class="blur-num">'+fmt(tA_accrued)+'</span> à recevoir</div>' : '')
+    +     (tA_accrued > 0 ? '<div class="kpi-accrued">+ <span class="blur-num">'+fmt(tA_accrued)+'</span> d’intérêts à recevoir</div>' : '')
+    +     (noteMasquees() ? '<div class="kpi-accrued">'+noteMasquees()+'</div>' : '')
     +   '</div>'
     + '</div></div>'
   const _secKpis = [
@@ -3912,7 +3942,7 @@ function renderInv() {
   const summaryEl = document.getElementById('inv-summary')
   if (summaryEl) {
     if (catF && list.length > 0) {
-      const totVal  = list.reduce((s, i) => s + computeStats(i).valeur, 0)
+      const totVal  = list.reduce((s, i) => s + valeurPatrimoine(i), 0)
       const totCap  = list.reduce((s, i) => s + computeStats(i).capitalNet, 0)
       const totPL   = list.reduce((s, i) => {
         const p = plForPeriod(i, invPeriod); return s + (p.canPeriod ? p.pl : computeStats(i).pl)
@@ -4307,7 +4337,7 @@ function renderInvCards(list) {
       ? subCats(filteredCat.id).reduce((s,sc) => s + (Number(sc.liquidites)||0), 0)
       : 0
     const filtTotalLiq = filtLiq + filtSubLiq
-    const filtTotalVal = list.reduce((s,i) => s + computeStats(i).valeur, 0) + filtTotalLiq
+    const filtTotalVal = list.reduce((s,i) => s + valeurPatrimoine(i), 0) + filtTotalLiq
     const filtTotalPl  = list.reduce((s,i) => { const p=plForPeriod(i,invPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
 
     const html = buildInvCardGroup(list)
@@ -4345,7 +4375,7 @@ function renderInvCards(list) {
     // Calculer aussi les liquidités des sous-cats pour skip intelligent
     const _subLiqCheck = subCats(cat.id).reduce((s,sc) => s + (Number(sc.liquidites)||0), 0)
     if (!items.length && !_catLiqCheck && !_subLiqCheck) continue
-    const totalVal = items.reduce((s,i) => s + computeStats(i).valeur, 0)
+    const totalVal = items.reduce((s,i) => s + valeurPatrimoine(i), 0)
     const totalPl  = items.reduce((s,i) => { const p=plForPeriod(i,invPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
     const plPos    = totalPl >= 0
     // Pour les sous-catégories : inclure aussi les items dans les sous-cats
@@ -4361,7 +4391,7 @@ function renderInvCards(list) {
       for (const sc of usedSubs) {
         const scItems  = items.filter(i => i.subcat === sc.id)
         if (!scItems.length) continue
-        const scVal    = scItems.reduce((s,i) => s + computeStats(i).valeur, 0)
+        const scVal    = scItems.reduce((s,i) => s + valeurPatrimoine(i), 0)
         const scPl     = scItems.reduce((s,i) => { const p=plForPeriod(i,invPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
         const scPlPos  = scPl >= 0
         const scLiq    = Number(sc.liquidites) || 0
@@ -4534,7 +4564,8 @@ function buildInvCardGroup(list) {
     const coursNote = i.ticker && i.prixUnitaire
       ? i.prixUnitaire.toLocaleString('fr-FR',_F2) + '\u00a0\u20ac'
         + (_lastUpd ? ' \u00b7 <span style="opacity:.55;font-size:10px">' + _lastUpd + '</span>' : '') : ''
-    const rendNote  = s.tauxCourant != null ? s.tauxCourant.toFixed(s.tauxCourant%1===0?0:1)+'%/an' : (i.rendement ? i.rendement+'%/an' : '')
+    const rendNote  = s.tauxCourant != null ? (Math.round(s.tauxCourant*100)/100)+'%/an' : (i.rendement ? i.rendement+'%/an' : '')
+    const courusCarte = estARendement(s) ? Math.max(0, s.valeur - Math.max(0, s.capitalNet)) : 0
     const dateNote  = i.date ? fmtDate(i.date) : ''
     const echEff = s.echeanceCourante || i.echeance
     const echNote   = echEff ? '\u23f3\u00a0'+fmtDate(echEff) : ''
@@ -4563,17 +4594,29 @@ function buildInvCardGroup(list) {
         ? Math.min(100, Math.max(0, (new Date()-new Date(i.date))/(new Date(echEff)-new Date(i.date))*100))
         : null
       rightSection = '<div class="inv-card-info">'
-        + '<div class="inv-info-row"><span class="inv-info-lbl">Rendement</span><span class="inv-info-val" style="color:var(--gold)">'+(s.tauxCourant!=null?s.tauxCourant.toFixed(s.tauxCourant%1===0?0:1):i.rendement)+'%/an</span></div>'
+        + '<div class="inv-info-row"><span class="inv-info-lbl">Rendement</span><span class="inv-info-val" style="color:var(--gold)">'+(s.tauxCourant!=null?Math.round(s.tauxCourant*100)/100:i.rendement)+'%/an</span></div>'
         + (s.revenus > 0
             ? '<div class="inv-info-row"><span class="inv-info-lbl">Déjà perçu</span><span class="inv-info-val blur-num" style="color:var(--green)">+'+fmt(s.revenus,2)+'</span></div>'
             : '')
         + (s.valeurProjetee
-            ? '<div class="inv-info-row"><span class="inv-info-lbl">À recevoir</span><span class="inv-info-val blur-num" style="color:var(--blue)">+'+fmt(s.valeurProjetee,0)+'</span></div>'
+            ? '<div class="inv-info-row" title="Capital restant + intérêts restant à courir jusqu’à l’échéance"><span class="inv-info-lbl">Reste à recevoir</span><span class="inv-info-val blur-num" style="color:var(--text)">'+fmt(s.valeurProjetee,0)+'</span></div>'
             : (echEff ? '<div class="inv-info-row"><span class="inv-info-lbl">Échéance</span><span class="inv-info-val">'+fmtDate(echEff)+'</span></div>' : ''))
         + (s.totalEcheance
             ? '<div class="inv-info-row" style="border-top:1px solid var(--border);margin-top:2px;padding-top:4px"><span class="inv-info-lbl" style="color:var(--text)">Total final</span><span class="inv-info-val blur-num" style="color:var(--text);font-size:13px">'+fmt(s.totalEcheance,0)+'</span></div>'
             : '')
         + (progPct !== null ? '<div class="inv-prog-track" style="margin-top:4px"><div class="inv-prog-fill" style="width:'+progPct.toFixed(1)+'%;background:'+color+'"></div></div>' : '')
+        + '</div>'
+        } else if (!i.ticker && !i.resolvedTicker && !isFlat) {
+      // Actif à valorisation manuelle (immobilier, private equity, objets…) : pas de courbe, on résume les valorisations
+      const vals = (DB.valorisations[i.id] || []).slice().sort((a,b) => b.date.localeCompare(a.date))
+      const derniere = vals[0]
+      rightSection = '<div class="inv-card-info" style="min-width:150px">'
+        + (derniere
+            ? '<div class="inv-info-row"><span class="inv-info-lbl">Dernière valorisation</span><span class="inv-info-val">'+fmtDate(derniere.date)+'</span></div>'
+              + '<div class="inv-info-row"><span class="inv-info-lbl">Valorisations saisies</span><span class="inv-info-val">'+vals.length+'</span></div>'
+            : '<div class="inv-info-row"><span class="inv-info-lbl">Valorisation</span><span class="inv-info-val" style="color:var(--muted)">aucune</span></div>'
+              + '<div style="font-size:10px;color:var(--muted);margin-top:4px">Valeur = montant placé. Ajoutez une valorisation via 💸 › Valorisations.</div>')
+        + (i.date ? '<div class="inv-info-row"><span class="inv-info-lbl">Détenu depuis</span><span class="inv-info-val">'+fmtDate(i.date)+'</span></div>' : '')
         + '</div>'
         } else {
       const spark      = computeInvSparklineForPeriod(i, invPeriod)
@@ -4608,10 +4651,13 @@ function buildInvCardGroup(list) {
       + '<div class="inv-card-vals">'
       +   '<div class="inv-val-lbl" style="margin-bottom:3px">Valeur actuelle</div>'
       +   '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'
-      +     '<div class="inv-val-num blur-num" ondblclick="inlineEditValeur(event,\''+i.id+'\')" style="cursor:text;font-size:16px" title="Double-clic pour modifier">'+fmt(s.valeur,2)+'</div>'
+      +     ((i.statut === 'Remboursé' && s.valeur < 0.5)
+              ? '<div class="inv-val-num" style="font-size:14px;color:var(--muted)">Clôturée</div>'
+              : '<div class="inv-val-num blur-num" ondblclick="inlineEditValeur(event,\''+i.id+'\')" style="cursor:text;font-size:16px" title="Double-clic pour modifier">'+fmt(s.valeur,2)+'</div>')
       +     (valSub ? valSub : '')
       +   '</div>'
-      +   (coursNote ? '<div style="font-size:11px;color:var(--muted);font-family:monospace;margin-top:2px">'+coursNote+'</div>' : '')
+      +   (coursNote ? '<div style="font-size:11px;color:var(--muted);font-family:monospace;margin-top:2px">'+coursNote+'</div>'
+          : (courusCarte >= 0.5 ? '<div style="font-size:10px;color:var(--muted);margin-top:2px" title="Intérêts courus non encore versés : ils ne comptent pas dans le patrimoine tant qu’ils ne sont pas perçus">dont <span class="blur-num">'+fmt(courusCarte,0)+'</span> d’intérêts courus</div>' : ''))
       +   '<div style="height:1px;background:var(--border);margin:8px 0"></div>'
       +   '<div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:nowrap;overflow:hidden">'
       +     '<div><div class="inv-val-lbl">Capital</div><div class="blur-num" style="font-family:monospace;font-size:12px;font-weight:600;color:var(--text)">'+fmt(s.capitalNet)+'</div></div>'
@@ -4881,7 +4927,7 @@ function openMvt(invId) {
   const inv = investments().find(i=>i.id===invId); if (!inv) return
   const c   = getCat(inv.cat)
   document.getElementById('mvt-ph-name').textContent = inv.nom
-  document.getElementById('mvt-ph-cat').textContent  = c.icon+' '+c.label + (inv.rendement ? ' · '+inv.rendement+'%/an' : '')
+  document.getElementById('mvt-ph-cat').textContent  = c.icon+' '+c.label + (getTauxEff(inv) ? ' · '+(Math.round(getTauxEff(inv)*100)/100)+'%/an' : '')
   renderMvtForm(inv)
   document.getElementById('mvt-f-date').value    = new Date().toISOString().slice(0,10)
   renderMvtPanel()
@@ -4969,7 +5015,7 @@ function renderMvtPanel() {
   if (inv.ticker && inv.prixUnitaire) {
     const ts = inv.lastTickerUpdate ? new Date(inv.lastTickerUpdate).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : ''
     kpiSub = '<span class="badge-live" style="font-size:9px;padding:1px 5px">LIVE</span> '+ts
-  } else if (Number(inv.rendement)) { kpiSub = inv.rendement+'%/an' }
+  } else if (getTauxEff(inv)) { kpiSub = (Math.round(getTauxEff(inv)*100)/100)+'%/an' }
   const echSub = s.valeurProjetee
     ? '<div class="mvt-kpi-sub blur-num">→ '+fmt(s.valeurProjetee,0)+' à l’éch.</div>'
     : '<div class="mvt-kpi-sub">&nbsp;</div>'
@@ -5033,7 +5079,7 @@ function renderMvtPanel() {
     return '<div class="mvt-row">'
       + '<div class="mvt-dot" style="background:'+cfg.color+'"></div>'
       + '<div class="mvt-info"><div class="mvt-meta">'
-      + '<div class="mvt-lbl">'+cfg.icon+' '+cfg.label+'</div>'
+      + '<div class="mvt-lbl">'+cfg.icon+' '+((m.type==='fraisachat' && mvts.some(x=>x.type==='vente'&&x.date===m.date)) ? 'Frais de vente' : cfg.label)+'</div>'
       + '<div class="mvt-date">'+fmtDate(m.date)+'</div>'
       + extra+'</div></div>'
       + '<div class="mvt-amount blur-num" style="color:'+cfg.color+'">'+sign+' '+(isProl?'&mdash;':fmt(m.montant))+'</div>'
@@ -5406,6 +5452,15 @@ function addMvt() {
   toast(frais > 0 ? "Mouvement + frais d'entrée enregistrés" + liqMsg : 'Mouvement enregistré' + liqMsg)
 }
 function deleteMvt(mvtId) {
+  const m = (DB.mouvements[mvtInvId] || []).find(x => x.id === mvtId)
+  if (!m) return
+  const cfg = MVT_TYPES[m.type] || { label: m.type }
+  showConfirm('Supprimer ce mouvement ?',
+    cfg.label + ' du ' + fmtDate(m.date) + (m.type === 'prolongation' ? '' : ' · ' + fmt(Number(m.montant), 2))
+      + ((m.type === 'achat' || m.type === 'vente') ? ' — les frais rattachés seront supprimés aussi.' : ''),
+    () => _supprimerMvt(mvtId))
+}
+function _supprimerMvt(mvtId) {
   const mvts = DB.mouvements[mvtInvId] || []
   const mvt  = mvts.find(m => m.id === mvtId)
 
@@ -5655,10 +5710,18 @@ async function renderDividends() {
   el.innerHTML = rows.join('')
 }
 
+// Montant total attendu à l'échéance = revenus déjà perçus + capital restant + intérêts restant à courir.
+// Même chiffre que « Total final » sur la carte. Échéance dépassée : revenus perçus + valeur actuelle.
+function totalAttenduEcheance(inv) {
+  const s = computeStats(inv)
+  if (s.totalEcheance != null) return s.totalEcheance
+  return Math.round(((s.revenus||0) + s.valeur) * 100) / 100
+}
+
 function renderEcheances() {
   renderDividends()  // async, met à jour #div-list
   const inv = investments()
-  const upcoming = inv.filter(d=>d.echeance&&d.statut==='En cours').sort((a,b)=>a.echeance.localeCompare(b.echeance))
+  const upcoming = inv.filter(d=>getEcheanceEff(d)&&d.statut==='En cours').sort((a,b)=>getEcheanceEff(a).localeCompare(getEcheanceEff(b)))
   const done     = inv.filter(d=>d.statut==='Remboursé').sort((a,b)=>(b.echeance||'').localeCompare(a.echeance||''))
   const defaut   = inv.filter(d=>d.statut==='Défaut')
   function tlRow(i, urgent) {
@@ -5666,21 +5729,14 @@ function renderEcheances() {
     let cls='', extra=''
     if (urgent&&du!==null) { cls=du<0?'tl-urgent':du<60?'tl-soon':''; extra=du<0?`<span style="color:var(--red)">${-du}j retard</span>`:`<span style="color:var(--muted)">${du}j</span>` }
     const s = computeStats(i)
-    let valEcheance = s.valeur  // fallback : valeur actuelle estimée
-    const echEff3 = getEcheanceEff(i)
-      const tauxEff3 = getTauxEff(i)
-      if (tauxEff3 && i.date && echEff3) {
-      const dureeAns = (new Date(echEff3) - new Date(i.date)) / (365.25 * 86400000)
-      valEcheance = s.capitalNet * (1 + tauxEff3 / 100 * Math.max(0, dureeAns))
-    } else if (i.rendement && i.date && !i.echeance) {
-      valEcheance = s.valeur  // pas d'échéance → valeur prorata actuelle
-    }
-    const gain = valEcheance - s.capitalNet
+    const valEcheance = totalAttenduEcheance(i)
+    const apport = s.investi || s.capitalNet
+    const gain = valEcheance - apport
     const gainStr = (gain >= 0 ? '+' : '') + fmt(gain, 0)
     const gainColor = gain >= 0 ? 'var(--green)' : 'var(--red)'
     const amtBlock = `<div style="text-align:right">
       <div class="blur-num" style="font-family:'DM Mono',monospace;font-size:13.5px;font-weight:700">${fmt(valEcheance, 0)}</div>
-      <div class="blur-num" style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:1px">capital ${fmt(s.capitalNet, 0)}</div>
+      <div class="blur-num" style="font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:1px">investi ${fmt(apport, 0)}</div>
       <div class="blur-num" style="font-size:10px;font-family:'DM Mono',monospace;color:${gainColor};margin-top:1px">${gainStr}</div>
     </div>`
     return `<div class="tl-item ${cls}"><div class="tl-date">${fmtDate(getEcheanceEff(i)||i.date)}</div><div class="tl-dot" style="background:${c.color}"></div><div class="tl-body"><div class="tl-n">${i.nom}</div><div class="tl-c">${c.icon} ${c.label}${extra?' · '+extra:''}</div></div>${amtBlock}</div>`
@@ -5693,9 +5749,9 @@ function renderEcheances() {
 function renderEmprunts() {
   const dts = dettes()
   const inv = investments()
-  const tI  = inv.reduce((s,d) => s+computeStats(d).capitalNet, 0)
-  const tA  = inv.reduce((s,d) => s+computeValeur(d), 0)
-  const totalDettes    = dts.reduce((s,d) => s+Number(d.restant||0), 0)
+  const _P  = patrimoine()
+  const tA  = _P.brut
+  const totalDettes    = _P.dettes
   const totalMensual   = dts.reduce((s,d) => s+Number(d.mensualite||0)+(Number(d.assurPrime)||0), 0)
   const patrimoineNet  = tA - totalDettes
   document.getElementById('d-kpi-total').textContent   = fmt(totalDettes)
@@ -5780,8 +5836,8 @@ function renderAnaDonut() {
   const svgEl = document.getElementById('ana-donut-svg')
   const legEl = document.getElementById('ana-donut-legend')
   if (!svgEl || !legEl) return
-  const inv = investments()
-  const tA  = inv.reduce((s,i) => s + computeStats(i).valeur, 0)
+  const inv = investmentsVisibles()
+  const tA  = inv.reduce((s,i) => s + valeurPatrimoine(i), 0)
   if (tA <= 0) { svgEl.innerHTML=''; legEl.innerHTML='<div style="color:var(--muted);font-size:12px">Aucune donnée.</div>'; return }
   const COLORS = ['var(--blue)','var(--green)','var(--gold)','var(--red)','#9b59b6','#1abc9c','#e67e22','#3498db']
   const cats = rootCats()
@@ -5824,7 +5880,7 @@ function renderAnaRevenus() {
   }
   const totals = months.map(m => {
     let sum = 0
-    for (const inv of investments()) {
+    for (const inv of investmentsVisibles()) {
       for (const mvt of getMvts(inv.id)) {
         if ((mvt.type === 'dividende' || mvt.type === 'interets') && mvt.date && mvt.date.slice(0,7) === m.key) {
           sum += Number(mvt.montant) || 0
@@ -5849,10 +5905,10 @@ function renderAnaRevenus() {
 function renderAnaConcentration() {
   const el = document.getElementById('ana-concentration')
   if (!el) return
-  const inv = investments()
-  const tA  = inv.reduce((s,i) => s + computeStats(i).valeur, 0)
+  const inv = investmentsVisibles()
+  const tA  = inv.reduce((s,i) => s + valeurPatrimoine(i), 0)
   if (tA <= 0) { el.innerHTML='<div style="color:var(--muted);font-size:12px">Aucune donnée.</div>'; return }
-  const sorted = [...inv].map(i => ({ nom: i.nom, val: computeStats(i).valeur }))
+  const sorted = [...inv].map(i => ({ nom: i.nom, val: valeurPatrimoine(i) }))
     .filter(x => x.val > 0)
     .sort((a,b) => b.val - a.val)
   const top = sorted.slice(0, 6)
@@ -5874,13 +5930,13 @@ function renderAnaConcentration() {
 function renderAnaKPIs() {
   const el = document.getElementById('ana-kpis')
   if (!el) return
-  const inv = investments()
+  const inv = investmentsVisibles()
   if (!inv.length) { el.innerHTML=''; return }
   // TRI moyen (pondéré par capital)
   let triSum = 0, triCount = 0
   for (const i of inv) {
-    const t = computeTRI(i)
-    if (t !== null && isFinite(t)) { triSum += t; triCount++ }
+    const t = computeTRI(i), w = computeStats(i).investi || 0
+    if (t !== null && isFinite(t) && w > 0) { triSum += t * w; triCount += w }
   }
   const triMoy = triCount > 0 ? triSum/triCount : null
   // Revenus 12 mois
@@ -5892,20 +5948,15 @@ function renderAnaKPIs() {
       if ((m.type==='dividende'||m.type==='interets') && m.date >= yearAgo) revenus12 += Number(m.montant)||0
     }
   }
-  // Rendement net de frais
-  const tA = inv.reduce((s,i) => s+computeStats(i).valeur, 0)
-  const tI = inv.reduce((s,i) => s+computeStats(i).capitalNet, 0)
-  const totalFees = rootCats().reduce((s,c) => {
-    const catInv = inv.filter(i => i.cat===c.id)
-    return s + catInv.reduce((ss,i) => ss+(Number(i.fraisAchat)||0)+annualFees(i)+totalFraisMvts(i.id), 0)
-  }, 0)
-  const plBrut = tA - tI
-  const plNet  = plBrut - totalFees
-  const rdtNet = tI > 0 ? (plNet/tI*100) : null
+  // Performance globale, frais inclus : le P&L unique intègre déjà les frais réellement payés
+  // (achat, vente, frais courants). Les frais de gestion des fonds (TER) sont déjà dans leur cours.
+  const plNet   = inv.reduce((s,i) => s + computeStats(i).pl, 0)
+  const apports = inv.reduce((s,i) => s + (computeStats(i).investi || 0), 0)
+  const rdtNet  = apports > 0 ? (plNet/apports*100) : null
   el.innerHTML = `<div class="ana-kpi-grid">
     <div class="ana-kpi"><div class="ana-kpi-val" style="color:${triMoy!==null?(triMoy>=0?'var(--green)':'var(--red)'):'var(--muted)'}">${triMoy!==null?((triMoy>=0?'+':'')+triMoy.toFixed(1)+'%'):'—'}</div><div class="ana-kpi-lbl">TRI moyen</div></div>
     <div class="ana-kpi"><div class="ana-kpi-val blur-num" style="color:var(--blue)">${fmt(revenus12/12,0)}</div><div class="ana-kpi-lbl">Revenus/mois (12m)</div></div>
-    <div class="ana-kpi"><div class="ana-kpi-val" style="color:${rdtNet!==null?(rdtNet>=0?'var(--green)':'var(--red)'):'var(--muted)'}">${rdtNet!==null?((rdtNet>=0?'+':'')+rdtNet.toFixed(1)+'%'):'—'}</div><div class="ana-kpi-lbl">P&L net frais</div></div>
+    <div class="ana-kpi"><div class="ana-kpi-val" style="color:${rdtNet!==null?(rdtNet>=0?'var(--green)':'var(--red)'):'var(--muted)'}">${rdtNet!==null?((rdtNet>=0?'+':'')+rdtNet.toFixed(1)+'%'):'—'}</div><div class="ana-kpi-lbl">Performance (frais inclus)</div></div>
   </div>`
 }
 
@@ -5922,9 +5973,9 @@ function setRankMode(mode) {
 function renderAnaKPIBand() {
   const el = document.getElementById('ana-kpi-band')
   if (!el) return
-  const inv = investments()
-  const tI  = inv.reduce((s,i) => s+computeStats(i).capitalNet, 0) + totalLiquidites()
-  const tA  = inv.reduce((s,i) => s+computeValeur(i), 0) + totalLiquidites()
+  const inv = investmentsVisibles()
+  const tI  = inv.reduce((s,i) => s+computeStats(i).capitalNet, 0) + liquiditesVisibles()
+  const tA  = inv.reduce((s,i) => s+valeurPatrimoine(i), 0) + liquiditesVisibles()
   const pvTotal = inv.reduce((s,i) => { const p=plForPeriod(i,anaPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
   const pctGlob = tI > 0 ? (pvTotal/tI*100) : 0
   const nCours = inv.filter(i=>i.statut==='En cours').length
@@ -5972,13 +6023,13 @@ function toggleRankAll() {
 function renderAnaRanking() {
   const el = document.getElementById('ana-ranking')
   if (!el) return
-  const inv = investments()
+  const inv = investmentsVisibles()
   if (!inv.length) { el.innerHTML='<div style="color:var(--muted);font-size:12px">Aucun investissement.</div>'; return }
   let sorted
   if (anaRankMode === 'tri') {
     sorted = [...inv].map(i=>({ i, v: computeTRI(i) })).sort((a,b)=>{ const av=a.v??-Infinity, bv=b.v??-Infinity; return bv-av })
   } else if (anaRankMode === 'val') {
-    sorted = [...inv].map(i=>({ i, v: computeStats(i).valeur })).sort((a,b)=>b.v-a.v)
+    sorted = [...inv].map(i=>({ i, v: valeurPatrimoine(i) })).sort((a,b)=>b.v-a.v)
   } else {
     sorted = [...inv].map(i=>({ i, v: plForPeriod(i,anaPeriod).pl })).sort((a,b)=>b.v-a.v)
   }
@@ -6028,7 +6079,7 @@ async function setBenchmark(b) {
 function renderAnaCatEvo() {
   const el = document.getElementById('ana-cat-evo')
   if (!el) return
-  const inv = investments()
+  const inv = investmentsVisibles()
   if (!inv.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Aucune donnée.</div>'; return }
 
   const PERIODS = [
@@ -6050,7 +6101,7 @@ function renderAnaCatEvo() {
       const pct = cap > 0 ? (pl / cap * 100) : null
       return { pl, pct }
     })
-    const totalVal = catInv.reduce((s,i) => s + computeStats(i).valeur, 0)
+    const totalVal = catInv.reduce((s,i) => s + valeurPatrimoine(i), 0)
     return { c, cells, totalVal }
   }).filter(Boolean)
 
@@ -6080,7 +6131,7 @@ function renderAnaCatEvo() {
 function renderAnaRealised() {
   const el = document.getElementById('ana-realised')
   if (!el) return
-  const inv = investments()
+  const inv = investmentsVisibles()
 
   // ── Construire les lignes : cessions + revenus (dividendes + intérêts) par position
   const rows = []
@@ -6202,7 +6253,7 @@ function renderAnaRealised() {
   if (rows.length > LIMIT) {
     html += '<div style="text-align:center;padding:10px 0;border-top:1px solid var(--border);margin-top:4px">'
       + '<button onclick="toggleRealisedRows()" style="background:none;border:1px solid var(--border);cursor:pointer;font-size:11px;color:var(--blue);padding:5px 16px;border-radius:var(--radius-sm)">'
-      + (showAll ? '↑ Réduire' : '↓ Voir les '+hidden+' autres positions')
+      + (showAll ? '↑ Réduire' : (hidden === 1 ? '↓ Voir l’autre position' : '↓ Voir les '+hidden+' autres positions'))
       + '</button></div>'
   }
 
@@ -6228,7 +6279,7 @@ function toggleRealisedRows() {
 function renderAnaEcheances() {
   const el = document.getElementById('ana-echeances')
   if (!el) return
-  const inv = investments()
+  const inv = investmentsVisibles()
   const now = new Date().toISOString().slice(0,10)
   const upcoming = inv
     .filter(i => { const e=getEcheanceEff(i); return e && e >= now && i.statut === 'En cours' })
@@ -6246,16 +6297,16 @@ function renderAnaEcheances() {
     return '<div class="ech-row">'
       + '<div class="ech-countdown" style="color:'+col+'">'+duStr+'</div>'
       + '<div style="flex:1;min-width:0"><div class="ech-name">'+i.nom+'</div><div class="ech-date">'+fmtDate(getEcheanceEff(i))+'</div></div>'
-      + '<div class="ech-val blur-num">'+fmt(s.valeur,0)+'</div>'
+      + '<div class="ech-val blur-num" title="Total attendu à l’échéance">'+fmt(totalAttenduEcheance(i),0)+'</div>'
       + '</div>'
   }).join('')
 }
 
 function renderAnalytics() {
   initPatrimoineChart()
-  const inv = investments()
+  const inv = investmentsVisibles()
   const tI  = inv.reduce((s,d) => s+computeStats(d).capitalNet, 0)
-  const tA  = inv.reduce((s,d) => s+computeValeur(d), 0)
+  const tA  = inv.reduce((s,d) => s+valeurPatrimoine(d), 0)
   const pvTotal = inv.reduce((s,d) => { const p=plForPeriod(d,anaPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
 
   const feesCats = rootCats().map(c => {
@@ -7255,28 +7306,36 @@ function renderHistory() {
   }
   all.sort((a,b) => b.mvt.date.localeCompare(a.mvt.date))
   // Sommaire
-  const totIn  = all.filter(x=>['depot','interets','dividende','achat'].includes(x.mvt.type)).reduce((s,x)=>s+Number(x.mvt.montant),0)
-  const totOut = all.filter(x=>['retrait','frais','fraisachat','vente'].includes(x.mvt.type)).reduce((s,x)=>s+Number(x.mvt.montant),0)
-  const totRev = all.filter(x=>['dividende','interets'].includes(x.mvt.type)).reduce((s,x)=>s+Number(x.mvt.montant),0)
+  // Lecture unique, du point de vue de la position : ce qui y entre (+) et ce qui en sort (−)
+  const somme  = t => all.filter(x=>t.includes(x.mvt.type)).reduce((s,x)=>s+Number(x.mvt.montant),0)
+  const totIn  = somme(['depot','achat'])
+  const totOut = somme(['retrait','vente'])
+  const totRev = somme(['dividende','interets','bonus'])
+  const totFr  = somme(['frais','fraisachat'])
   if (summEl) summEl.innerHTML = [
     { l:all.length+' mouvement'+(all.length!==1?'s':''), c:'var(--text)' },
-    { l:'Entrées : '+fmt(totIn,0), c:'var(--blue)' },
-    { l:'Sorties : '+fmt(totOut,0), c:'var(--red)' },
+    { l:'Placé : '+fmt(totIn,0), c:'var(--blue)' },
+    { l:'Récupéré : '+fmt(totOut,0), c:'var(--gold)' },
     { l:'Revenus : '+fmt(totRev,0), c:'var(--green)' },
+    { l:'Frais : '+fmt(totFr,0), c:'var(--red)' },
   ].map(x=>'<span style="font-size:11px;color:'+x.c+'">'+x.l+'</span>').join('<span style="color:var(--border2);margin:0 4px">·</span>')
   if (!all.length) { listEl.innerHTML='<div style="color:var(--muted);font-size:12px;padding:20px;text-align:center">Aucun mouvement pour ce filtre.</div>'; return }
   const typeColors = { depot:'var(--blue)',retrait:'var(--red)',dividende:'var(--gold)',interets:'var(--green)',frais:'var(--red)',fraisachat:'var(--red)',achat:'var(--blue)',vente:'var(--gold)' }
-  const typeSigns  = { depot:'+',retrait:'-',dividende:'+',interets:'+',frais:'-',fraisachat:'-',achat:'',vente:'+' }
+  const typeSigns  = { depot:'+',achat:'+',retrait:'−',vente:'−',dividende:'+',interets:'+',bonus:'+',frais:'−',fraisachat:'−' }
+  const amountCols = { depot:'var(--blue)',achat:'var(--blue)',retrait:'var(--gold)',vente:'var(--gold)',dividende:'var(--green)',interets:'var(--green)',bonus:'var(--green)',frais:'var(--red)',fraisachat:'var(--red)' }
   listEl.innerHTML = all.map(({mvt,inv}) => {
     const cfg  = MVT_TYPES[mvt.type]||{label:mvt.type,color:'var(--muted)',icon:'·'}
     const col  = typeColors[mvt.type]||'var(--muted)'
     const sign = typeSigns[mvt.type]||''
-    const plCol = sign==='+' ? 'var(--green)' : sign==='-' ? 'var(--red)' : 'var(--muted)'
+    const plCol = amountCols[mvt.type] || 'var(--muted)'
+    // Frais saisis le jour d'une vente = frais de vente
+    const estFraisVente = mvt.type === 'fraisachat' && getMvts(inv.id).some(m => m.type === 'vente' && m.date === mvt.date)
+    const libelle = estFraisVente ? 'Frais de vente' : cfg.label
     const cat  = getCat(inv.cat)
     return '<div class="hist-row">'
       +'<div class="hist-dot" style="background:'+col+'"></div>'
       +'<div style="flex:1;min-width:0">'
-      +  '<div style="font-size:12px;font-weight:500">'+cfg.icon+' '+cfg.label+'</div>'
+      +  '<div style="font-size:12px;font-weight:500">'+cfg.icon+' '+libelle+'</div>'
       +  '<div class="hist-inv">'+inv.nom+' · <span style="color:'+(cat?.color||'var(--muted)')+'">'+( cat?.icon||'')+' '+(cat?.label||'')+'</span></div>'
       +  (mvt.type === 'prolongation'
         ? '<div class="hist-note" style="color:var(--orange,#f59e0b)">'+(mvt.nouveauTaux!=null?'→ '+mvt.nouveauTaux+'%/an ':'' )+(mvt.nouvelleEcheance?'⏩ '+fmtDate(mvt.nouvelleEcheance):'' )+(mvt.note?' — '+mvt.note:'' )+'</div>'
@@ -7316,7 +7375,7 @@ function setSimDuration(y) {
 
 function renderSimProjection() {
   const simInv    = getSimInvestments()
-  const patActuel = simInv.reduce((s,i) => s+computeStats(i).valeur, 0) + getSimLiquidites()
+  const patActuel = simInv.reduce((s,i) => s+valeurPatrimoine(i), 0) + getSimLiquidites()
   const scopeLabel = getSimScopeLabel()
   const initial   = parseFloat(document.getElementById('sp-initial')?.value) || 0
   const monthly   = parseFloat(document.getElementById('sp-monthly')?.value) || 0
@@ -7398,7 +7457,7 @@ function renderSimProjection() {
 function renderSimRebalance() {
   const allInv  = getSimInvestments()
   const cats    = rootCats()
-  const tA      = allInv.reduce((s,i)=>s+computeStats(i).valeur,0)
+  const tA      = allInv.reduce((s,i)=>s+valeurPatrimoine(i),0)
   const inputsEl  = document.getElementById('sim-reb-inputs')
   const actionsEl = document.getElementById('sim-reb-actions')
   const totalEl   = document.getElementById('sim-reb-total')
@@ -7407,7 +7466,7 @@ function renderSimRebalance() {
   // Allocation actuelle par catégorie
   const actuel = {}
   cats.forEach(c => {
-    const v = allInv.filter(i=>i.cat===c.id).reduce((s,i)=>s+computeStats(i).valeur,0)
+    const v = allInv.filter(i=>i.cat===c.id).reduce((s,i)=>s+valeurPatrimoine(i),0)
     actuel[c.id] = v
   })
 
@@ -7431,7 +7490,7 @@ function renderSimRebalance() {
 function updateSimRebalance() {
   const allInv  = getSimInvestments()
   const cats    = rootCats()
-  const tA      = allInv.reduce((s,i)=>s+computeStats(i).valeur,0)
+  const tA      = allInv.reduce((s,i)=>s+valeurPatrimoine(i),0)
   const totalEl   = document.getElementById('sim-reb-total')
   const actionsEl = document.getElementById('sim-reb-actions')
   const inputs    = document.querySelectorAll('#sim-reb-inputs input')
@@ -7450,7 +7509,7 @@ function updateSimRebalance() {
   if (!actionsEl) return
   const actuel = {}
   cats.forEach(c => {
-    actuel[c.id] = allInv.filter(i=>i.cat===c.id).reduce((s,i)=>s+computeStats(i).valeur,0)
+    actuel[c.id] = allInv.filter(i=>i.cat===c.id).reduce((s,i)=>s+valeurPatrimoine(i),0)
   })
 
   const rows = cats.map(c => {
@@ -7474,7 +7533,7 @@ function updateSimRebalance() {
 // ── Scénario 3 : Revenus cibles ──────────────────────────────────
 function renderSimRevenus() {
   const allInv   = getSimInvestments()
-  const tA       = allInv.reduce((s,i)=>s+computeStats(i).valeur,0) + getSimLiquidites()
+  const tA       = allInv.reduce((s,i)=>s+valeurPatrimoine(i),0) + getSimLiquidites()
   const scopeLabelR = getSimScopeLabel()
   const targetM  = parseFloat(document.getElementById('sr-target')?.value) || 500
   const yieldAnn = (parseFloat(document.getElementById('sr-yield')?.value) || 6) / 100
