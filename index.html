@@ -3070,6 +3070,32 @@ function liquiditesVisibles() {
   const h = catsMasquees()
   return DB.categories.reduce((s,c) => s + (h.includes(catRacine(c.id)) ? 0 : (Number(c.liquidites)||0)), 0)
 }
+// Décomposition du P&L d'une période : ce qui vient des revenus encaissés (dividendes, intérêts,
+// bonus) et ce qui vient de la valeur (plus-values latentes et réalisées, nettes des frais).
+function plDecompose(invList, period) {
+  const start = getPeriodStart(period)
+  let pl = 0, revenus = 0
+  for (const i of invList) {
+    const p = plForPeriod(i, period)
+    if (!p.canPeriod) continue
+    pl += p.pl
+    revenus += getMvts(i.id).filter(m => ['dividende','interets','bonus'].includes(m.type) && (!start || m.date > start))
+      .reduce((s,m) => s + Number(m.montant), 0)
+  }
+  return { pl, revenus, valeur: pl - revenus }
+}
+function plDecomposeHtml(d) {
+  const sg = v => (v >= 0 ? '+' : '')
+  return '<span style="color:'+(d.valeur>=0?'var(--green)':'var(--red)')+'">'+sg(d.valeur)+fmt(d.valeur)+'</span> plus-values'
+    + ' \u00b7 <span style="color:var(--gold)">'+sg(d.revenus)+fmt(d.revenus)+'</span> div. & int.'
+}
+function plDecomposeTitle(d) {
+  const sg = v => (v >= 0 ? '+' : '')
+  return 'Plus-values (cours, ventes, intérêts courus, frais déduits) : ' + sg(d.valeur) + fmt(d.valeur,2)
+    + '&#10;Dividendes, intérêts & bonus reçus : ' + sg(d.revenus) + fmt(d.revenus,2)
+    + '&#10;P&L : ' + sg(d.pl) + fmt(d.pl,2)
+}
+
 // Argent réellement apporté par l'utilisateur dans une position, net de ce qu'il en a déjà retiré
 // (ventes, remboursements, intérêts, dividendes) : valeur − P&L = apports − sommes reçues.
 // Un dividende ou une plus-value réinvesti ailleurs est reçu ici et apporté là-bas : il s'annule
@@ -3850,8 +3876,9 @@ function renderDashboard() {
     +     (tA_accrued > 0 ? '<div class="kpi-accrued">+ <span class="blur-num">'+fmt(tA_accrued)+'</span> d’intérêts à recevoir</div>' : '')
     +   '</div>'
     + '</div></div>'
+  const _plDec = plDecompose(visInv, dashPeriod)
   const _secKpis = [
-    { l:'P&amp;L '+_plLabel, v:(pvTotal>=0?'+':'')+fmt(pvTotal), s:'Perf.\u00a0: '+(tI>0?(pvTotal>=0?'+':'')+((pvTotal/tI)*100).toFixed(2)+'%':'--'), c:_plColor },
+    { l:'P&amp;L '+_plLabel, v:(pvTotal>=0?'+':'')+fmt(pvTotal), s:'Perf.\u00a0: '+(tI>0?(pvTotal>=0?'+':'')+((pvTotal/tI)*100).toFixed(2)+'%':'--')+'<br>'+plDecomposeHtml(_plDec), t:plDecomposeTitle(_plDec), c:_plColor },
     { l:'Revenus\u00a0per\u00e7us', v:fmt(totalRevenus), s:(()=>{
         if (revDetail.length) return revDetail.slice(0,2).join(' \u00b7 ')+(revDetail.length>2?' \u00b7 +'+(revDetail.length-2)+' autre'+(revDetail.length>3?'s':''):'')
         if (revEstim>0) return '~'+fmt(revEstim)+'/an estim\u00e9s'
@@ -3862,10 +3889,10 @@ function renderDashboard() {
         return clos+' remboursé'+(clos>1?'s':'') + (def ? ' \u00b7 '+def+' en défaut' : '')
       })(), c:'var(--green)' },
   ]
-  const _secHtml = _secKpis.map(k=>'<div class="kpi" style="border-top-color:'+k.c+';cursor:pointer" onclick="copyKPI(\''+k.v+'\',\''+k.l+'\')" title="Cliquer pour copier">'
+  const _secHtml = _secKpis.map(k=>'<div class="kpi" style="border-top-color:'+k.c+';cursor:pointer" onclick="copyKPI(\''+k.v+'\',\''+k.l+'\')" title="'+(k.t ? k.t+'&#10;&#10;' : '')+'Cliquer pour copier">'
     +'<div class="kpi-lbl">'+k.l+'</div>'
     +'<div class="kpi-val kpi-anim blur-num" style="color:'+k.c+'">'+k.v+'</div>'
-    +'<div class="kpi-sub">'+k.s+'</div></div>').join('')
+    +'<div class="kpi-sub blur-num">'+k.s+'</div></div>').join('')
   document.getElementById('kpi-grid').innerHTML = _heroHtml + _secHtml
   setTimeout(()=>document.querySelectorAll('.kpi-anim').forEach(el=>{el.style.transition='none';el.style.opacity='0';requestAnimationFrame(()=>{el.style.transition='opacity .3s';el.style.opacity='1'})}),10)
 
@@ -6055,10 +6082,11 @@ function renderAnaKPIBand() {
   // Gains réalisés (positions clôturées ou ventes partielles)
   const plRealTotal = inv.reduce((s,i) => s + (computeStats(i).plRealise||0), 0)
 
+  const _dec = plDecompose(inv, anaPeriod)
   const items = [
     { val: fmt(tA,0), lbl: 'Valeur totale', sub: null, col: 'var(--text)', blur: true },
     { val: fmt(tI,0), lbl: 'Capital investi', sub: null, col: 'var(--blue)', blur: true },
-    { val: (pvTotal>=0?'+':'')+fmt(pvTotal,0), lbl: 'P&L '+plLabel, sub: (pctGlob>=0?'+':'')+pctGlob.toFixed(1)+'%', col: plCol, blur: true },
+    { val: (pvTotal>=0?'+':'')+fmt(pvTotal,0), lbl: 'P&L '+plLabel, sub: (pctGlob>=0?'+':'')+pctGlob.toFixed(1)+'% · dont '+(_dec.revenus>=0?'+':'')+fmt(_dec.revenus,0)+' div./int.', title: plDecomposeTitle(_dec), col: plCol, blur: true },
     { val: plRealTotal !== 0 ? (plRealTotal>0?'+':'')+fmt(plRealTotal,0) : '—', lbl: 'Gains réalisés', sub: plRealTotal !== 0 ? 'ventes & clôtures' : 'aucune vente', col: plRealTotal>0?'var(--green)':plRealTotal<0?'var(--red)':'var(--muted)', blur: plRealTotal!==0 },
     { val: fmt(rev12/12,0), lbl: 'Revenus/mois', sub: fmt(rev12,0)+' sur 12m', col: 'var(--blue)', blur: true },
     { val: nCours+'', lbl: 'En cours', sub: nRemb+' remboursé'+(nRemb>1?'s':'')+(nDef?' · '+nDef+' en défaut':''), col: 'var(--green)', blur: false },
@@ -6067,7 +6095,7 @@ function renderAnaKPIBand() {
   el.style.gridTemplateColumns = 'repeat(6,1fr)'
   el.style.gap = '8px'
   el.innerHTML = items.map(it =>
-    '<div class="ana-band-item">'
+    '<div class="ana-band-item"'+(it.title ? ' title="'+it.title+'"' : '')+'>'
     + '<div class="ana-band-val '+(it.blur?'blur-num':'')+'" style="color:'+it.col+'">'+it.val+'</div>'
     + '<div class="ana-band-lbl">'+it.lbl+'</div>'
     + (it.sub ? '<div class="ana-band-sub '+(it.blur?'blur-num':'')+'" style="color:var(--muted2)">'+it.sub+'</div>' : '')

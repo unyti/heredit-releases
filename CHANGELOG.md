@@ -1,5 +1,13 @@
 # CHANGELOG — Heredit
 
+## v3.14.49 — 2026-09-30
+
+### P&L : plus-values et dividendes séparés
+- **Tableau de bord** : sous le P&L, la part « plus-values » (cours, ventes, intérêts courus, frais déduits) et la part « dividendes & intérêts » reçus sur la période choisie (1J, 1M, YTD, Tout…). Le détail complet s'affiche au survol.
+- **Analyses** : « dont X € div./int. » sous le P&L, détail au survol.
+
+---
+
 ## v3.14.48 — 2026-09-30
 
 ### Analyses › Évolution du patrimoine
