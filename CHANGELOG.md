@@ -1,5 +1,15 @@
 # CHANGELOG — Heredit
 
+## v3.14.45 — 2026-09-29
+
+### Défauts & pertes
+- **Nouveau mouvement « Perte en capital »** : pour un projet en défaut dont une partie du capital ne sera pas remboursée. Le montant perdu sort du capital restant et est compté comme perte réalisée (une seule fois, jamais au-delà du capital restant).
+- **Statut « Défaut »** : plus aucun intérêt couru ni projection d'intérêts ; la valeur retenue est le capital restant. Une position en défaut entièrement perdue affiche « Perte totale ».
+- **Analyses › Gains & pertes réalisés** : les pertes en capital apparaissent avec les cessions (« Cessions & pertes »), et le tableau est trié par importance du montant.
+- **Historique** : total « Pertes » et filtres Bonus, Prolongation et Perte ajoutés.
+
+---
+
 ## v3.14.44 — 2026-09-29
 
 ### Analyses › Évolution du patrimoine

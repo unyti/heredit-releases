@@ -919,6 +919,9 @@ textarea
                   <option value="frais">💳 Frais</option>
                   <option value="achat">🛒 Achat</option>
                   <option value="vente">💸 Vente</option>
+                  <option value="bonus">🎁 Bonus</option>
+                  <option value="prolongation">⏰ Prolongation</option>
+                  <option value="perte">🔻 Perte en capital</option>
                 </select>
                 <select class="fi" id="hist-period" onchange="renderHistory()" style="font-size:12px;padding:4px 8px;width:auto">
                   <option value="all">Toute la période</option>
@@ -1015,7 +1018,7 @@ textarea
         <div class="card mb14" id="ana-realised-card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
             <div class="card-title" style="margin-bottom:0">✅ Gains &amp; pertes réalisés</div>
-            <div id="ana-realised-subtitle" style="font-size:10px;color:var(--muted)">Cessions · Dividendes · Intérêts</div>
+            <div id="ana-realised-subtitle" style="font-size:10px;color:var(--muted)">Cessions · Pertes · Dividendes · Intérêts</div>
           </div>
           <div id="ana-realised"></div>
         </div>
@@ -1388,6 +1391,7 @@ textarea
             <option value="frais">💳 Frais / Charges</option>
             <option value="fraisachat">🏷 Frais d'entrée</option>
             <option value="prolongation">⏰ Prolongation / Retard</option>
+            <option value="perte">🔻 Perte en capital</option>
           </select>
         </div>
         <div class="fg"><label class="fl">Montant (€) *</label><input class="fi" id="mvt-f-montant" type="number" min="0" step="1" placeholder="500"></div>
@@ -1584,6 +1588,7 @@ const MVT_TYPES = {
   fraisachat: { label:'Frais d\'entrée',  icon:'🏷', color:'var(--red)',    sign:-1, capital:true  },
   bonus:      { label:'Bonus / Prime',    icon:'🎁', color:'var(--gold)',   sign:+1, capital:false },
   prolongation: { label:'Prolongation / Retard', icon:'⏰', color:'var(--orange,#f59e0b)', sign:0, capital:false },
+  perte:      { label:'Perte en capital', icon:'🔻', color:'var(--red)', sign:-1, capital:true },
   achat:      { label:'Achat de titres',  icon:'🛒', color:'var(--blue)',   sign:+1, capital:true  },
   vente:      { label:'Vente de titres',  icon:'💸', color:'var(--gold)',   sign:-1, capital:true  },
 }
@@ -2827,6 +2832,7 @@ function computeStats(inv, asOf) {
       fraisVente[m.date] = (fraisVente[m.date] || 0) + (Number(m.montant) || 0)
   })
   let recettesVentes      = 0   // montant total encaissé via ventes
+  let pertesCapital       = 0   // capital définitivement perdu (défaut, liquidation…)
   const ventesDetail      = []  // détail par vente : date, prixVente, PRU, gain
 
   for (const ev of events) {
@@ -2854,6 +2860,14 @@ function computeStats(inv, asOf) {
       // Bonus / prime exceptionnel : revenu sans impact sur le capital ni le solde
       // → ne réduit pas "À recevoir" ni la projection à l'échéance
       revenus += ev.montant
+    } else if (ev.type === 'perte') {
+      // Perte en capital : le capital perdu sort du capital ET de la valeur, et devient une perte réalisée
+      // (P&L = valeur + sommes reçues − sommes apportées : la perte n'est comptée qu'une fois)
+      const m = Math.min(ev.montant, Math.max(0, capitalNet))
+      capitalNet -= m
+      solde       = Math.max(0, solde - m)
+      capitalEngageVentes += m
+      pertesCapital += m
     } else if (ev.type === 'prolongation') {
       // Prolongation / retard : change le taux et/ou l'échéance à partir de cette date
       // L'accrual précédent a déjà été appliqué au taux d'avant
@@ -2967,6 +2981,7 @@ function computeStats(inv, asOf) {
     capitalNet:     Math.max(0, capitalNet),
     pl:             plTotal,
     plRealise:      plRealise,
+    pertesCapital,
     charges,
     investi,
     ventesDetail,
@@ -4646,6 +4661,8 @@ function buildInvCardGroup(list) {
       +   '<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap">'
       +     ((i.statut === 'Remboursé' && s.valeur < 0.5)
               ? '<div class="inv-val-num" style="font-size:14px;color:var(--muted)">Clôturée</div>'
+              : (i.statut === 'Défaut' && s.valeur < 0.5 && s.pertesCapital > 0)
+              ? '<div class="inv-val-num" style="font-size:14px;color:var(--red)">Perte totale</div>'
               : '<div class="inv-val-num blur-num" ondblclick="inlineEditValeur(event,\''+i.id+'\')" style="cursor:text;font-size:16px" title="Double-clic pour modifier">'+fmt(s.valeur,2)+'</div>')
       +     (valSub ? valSub : '')
       +   '</div>'
@@ -5136,6 +5153,7 @@ function renderMvtForm(inv) {
     <option value="frais">💳 Frais / Charges</option>
     <option value="fraisachat">🏷 Frais d'entrée</option>
     <option value="prolongation">⏰ Prolongation / Retard</option>
+    <option value="perte">🔻 Perte en capital</option>
   </select>
 </div>
 <div class="fg"><label class="fl">Montant (€) *</label><input class="fi" id="mvt-f-montant" type="number" min="0" step="1" placeholder="500"></div>
@@ -6150,7 +6168,8 @@ function renderAnaRealised() {
     const mvts   = getMvts(i.id)
     const ventes = mvts.filter(m => m.type === 'vente')
     const revenus = mvts.filter(m => m.type === 'interets' || m.type === 'dividende')
-    if (!ventes.length && !revenus.length) return
+    const pertes  = mvts.filter(m => m.type === 'perte')
+    if (!ventes.length && !revenus.length && !pertes.length) return
 
     const s           = computeStats(i)
     const cat         = getCat(i.cat)
@@ -6171,7 +6190,7 @@ function renderAnaRealised() {
   }
   if (card) card.style.display = ''
 
-  rows.sort((a,b) => b.totalGain - a.totalGain)
+  rows.sort((a,b) => Math.abs(b.totalGain) - Math.abs(a.totalGain))   // les plus gros montants d'abord, gains comme pertes
 
   const totalGainAll   = rows.reduce((s,r) => s + r.totalGain,   0)
   const totalEncAll    = rows.reduce((s,r) => s + r.totalEncaisse, 0)
@@ -6183,7 +6202,7 @@ function renderAnaRealised() {
   let html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px">'
     + [
         { l:'Total encaissé', v: fmt(totalEncAll,0),                         c:'var(--text)' },
-        { l:'Gains de cession', v:(totalCessions>=0?'+':'')+fmt(totalCessions,0), c:totalCessions>=0?'var(--green)':'var(--red)' },
+        { l:'Cessions & pertes', v:(totalCessions>=0?'+':'')+fmt(totalCessions,0), c:totalCessions>=0?'var(--green)':'var(--red)' },
         { l:'Dividendes & intérêts', v:'+'+fmt(totalDivInt,0),               c:'var(--gold)' },
         { l:'Total Return net', v:(totalGainAll>=0?'+':'')+fmt(totalGainAll,0), c:col },
       ].map(k =>
@@ -6203,7 +6222,7 @@ function renderAnaRealised() {
 
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr>'
-    + ['Position','Titres vendus','PRU','Prix vente','Cession','Div / Int','Total Return'].map((h,j) =>
+    + ['Position','Titres vendus','PRU','Prix vente','Cession / perte','Div / Int','Total Return'].map((h,j) =>
         '<th'+(j===3?' title="Plusieurs ventes : moyenne pondérée par le nombre de titres"':'')+' style="text-align:'+(j===0?'left':'right')+';padding:4px 8px;font-size:10px;'
         +'font-weight:500;color:var(--muted);border-bottom:1px solid var(--border)">'+h+'</th>'
       ).join('')
@@ -7323,17 +7342,19 @@ function renderHistory() {
   const totOut = somme(['retrait','vente'])
   const totRev = somme(['dividende','interets','bonus'])
   const totFr  = somme(['frais','fraisachat'])
+  const totPe  = somme(['perte'])
   if (summEl) summEl.innerHTML = [
     { l:all.length+' mouvement'+(all.length!==1?'s':''), c:'var(--text)' },
     { l:'Placé : '+fmt(totIn,0), c:'var(--blue)' },
     { l:'Récupéré : '+fmt(totOut,0), c:'var(--gold)' },
     { l:'Revenus : '+fmt(totRev,0), c:'var(--green)' },
     { l:'Frais : '+fmt(totFr,0), c:'var(--red)' },
+    ...(totPe > 0 ? [{ l:'Pertes : '+fmt(totPe,0), c:'var(--red)' }] : []),
   ].map(x=>'<span style="font-size:11px;color:'+x.c+'">'+x.l+'</span>').join('<span style="color:var(--border2);margin:0 4px">·</span>')
   if (!all.length) { listEl.innerHTML='<div style="color:var(--muted);font-size:12px;padding:20px;text-align:center">Aucun mouvement pour ce filtre.</div>'; return }
   const typeColors = { depot:'var(--blue)',retrait:'var(--red)',dividende:'var(--gold)',interets:'var(--green)',frais:'var(--red)',fraisachat:'var(--red)',achat:'var(--blue)',vente:'var(--gold)' }
-  const typeSigns  = { depot:'+',achat:'+',retrait:'−',vente:'−',dividende:'+',interets:'+',bonus:'+',frais:'−',fraisachat:'−' }
-  const amountCols = { depot:'var(--blue)',achat:'var(--blue)',retrait:'var(--gold)',vente:'var(--gold)',dividende:'var(--green)',interets:'var(--green)',bonus:'var(--green)',frais:'var(--red)',fraisachat:'var(--red)' }
+  const typeSigns  = { depot:'+',achat:'+',retrait:'−',vente:'−',dividende:'+',interets:'+',bonus:'+',frais:'−',fraisachat:'−',perte:'−' }
+  const amountCols = { depot:'var(--blue)',achat:'var(--blue)',retrait:'var(--gold)',vente:'var(--gold)',dividende:'var(--green)',interets:'var(--green)',bonus:'var(--green)',frais:'var(--red)',fraisachat:'var(--red)',perte:'var(--red)' }
   listEl.innerHTML = all.map(({mvt,inv}) => {
     const cfg  = MVT_TYPES[mvt.type]||{label:mvt.type,color:'var(--muted)',icon:'·'}
     const col  = typeColors[mvt.type]||'var(--muted)'
