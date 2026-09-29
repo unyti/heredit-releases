@@ -1,6 +1,6 @@
 {
   "name": "heredit",
-  "version": "3.14.41",
+  "version": "3.14.42",
   "description": "Heredit — Suivi de patrimoine personnel",
   "author": "Heredit",
   "main": "main.js",
@@ -9,8 +9,8 @@
     "build": "electron-builder --win --x64"
   },
   "devDependencies": {
-    "electron": "^29.0.0",
-    "electron-builder": "^24.13.0"
+    "electron": "^44.4.5",
+    "electron-builder": "^26.15.3"
   },
   "build": {
     "appId": "fr.heredit.app",

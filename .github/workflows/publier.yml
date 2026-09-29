@@ -91,6 +91,16 @@ jobs:
           BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/$VERSION"
           curl -fsSIL "$BASE/Heredit.Setup.$VERSION.exe" > /dev/null
           curl -fsSIL "$BASE/Heredit-portable.exe" > /dev/null
+      - name: Calculer les empreintes SHA-256 des fichiers publiés
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          BASE="https://github.com/${GITHUB_REPOSITORY}/releases/download/$VERSION"
+          curl -fsSL -o setup.exe "$BASE/Heredit.Setup.$VERSION.exe"
+          curl -fsSL -o portable.exe "$BASE/Heredit-portable.exe"
+          echo "SHA_SETUP=$(sha256sum setup.exe | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "SHA_PORTABLE=$(sha256sum portable.exe | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          rm -f setup.exe portable.exe
       - name: Mettre à jour update.json
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -100,7 +110,9 @@ jobs:
             const fs = require("fs")
             const v = process.env.VERSION, base = process.argv[1]
             const u = { version: v, notes: "", date: new Date().toISOString().slice(0, 10),
-              files: { installer: `${base}/Heredit.Setup.${v}.exe`, portable: `${base}/Heredit-portable.exe` } }
+              files: { installer: `${base}/Heredit.Setup.${v}.exe`, portable: `${base}/Heredit-portable.exe` },
+              sha256: { installer: process.env.SHA_SETUP, portable: process.env.SHA_PORTABLE } }
+            if (!/^[a-f0-9]{64}$/.test(u.sha256.installer) || !/^[a-f0-9]{64}$/.test(u.sha256.portable)) { console.error("Empreintes manquantes"); process.exit(1) }
             fs.writeFileSync("update.json", JSON.stringify(u, null, 2) + "\n")
           ' "$BASE"
           git config user.name "github-actions[bot]"

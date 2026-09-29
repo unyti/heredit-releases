@@ -11,27 +11,87 @@ function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 }
 
+// ── Sauvegarde sûre ───────────────────────────────────────────────
+// investments.json      : fichier courant (écrit via un fichier temporaire puis renommé → jamais à moitié écrit)
+// investments.json.bak  : version précédente
+// backups/AAAA-MM-JJ.json : une copie par jour, 30 jours conservés
+const BAK_FILE   = DATA_FILE + '.bak'
+const BACKUP_DIR = path.join(DATA_DIR, 'backups')
+const BACKUP_DAYS = 30
+
+function isValidData(d) {
+  return d && typeof d === 'object' && Array.isArray(d.profiles) && d.profiles.length > 0
+    && d.investments && typeof d.investments === 'object'
+}
+
+function readJson(file) {
+  try { const d = JSON.parse(fs.readFileSync(file, 'utf8')); return isValidData(d) ? d : null } catch { return null }
+}
+
+function migrate(raw) {
+  if (!raw.mouvements)  raw.mouvements = {}
+  if (!raw.dettes)      raw.dettes = {}
+  if (!raw.settings)    raw.settings = { theme: 'dark', fontSize: 'normal', zoom: 100, hiddenCats: [], user: {} }
+  if (!raw.settings.user) raw.settings.user = {}
+  if (!raw.settings.hiddenCats) raw.settings.hiddenCats = []
+  if (!raw.settings.zoom)       raw.settings.zoom = 100
+  return raw
+}
+
+function latestBackups() {
+  try {
+    return fs.readdirSync(BACKUP_DIR).filter(f => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().reverse()
+      .map(f => path.join(BACKUP_DIR, f))
+  } catch { return [] }
+}
+
+let dataLocked = false   // true si le fichier est illisible et qu'aucune copie n'a pu être récupérée
+
 function loadData() {
   ensureDataDir()
-  if (!fs.existsSync(DATA_FILE)) return getDefaultData()
-  try {
-    const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'))
-    // Migrations automatiques
-    if (!raw.mouvements)  raw.mouvements = {}
-    if (!raw.dettes)      raw.dettes = {}
-    if (!raw.settings)    raw.settings = { theme: 'dark', fontSize: 'normal', zoom: 100, hiddenCats: [], user: {} }
-    if (!raw.settings.user) raw.settings.user = {}
-    if (!raw.settings.hiddenCats) raw.settings.hiddenCats = []
-    if (!raw.settings.zoom)       raw.settings.zoom = 100
-    return raw
-  } catch {
+  if (!fs.existsSync(DATA_FILE)) {
+    // Pas de fichier courant : tenter une copie avant de repartir de zéro
+    for (const f of [BAK_FILE, ...latestBackups()]) {
+      const d = fs.existsSync(f) && readJson(f)
+      if (d) { d._recovered = path.basename(f); return migrate(d) }
+    }
     return getDefaultData()
   }
+  const main = readJson(DATA_FILE)
+  if (main) return migrate(main)
+
+  // Fichier illisible : on le met de côté (jamais écrasé) et on repart de la dernière copie saine
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+  try { fs.copyFileSync(DATA_FILE, path.join(DATA_DIR, 'investments.illisible-' + stamp + '.json')) } catch {}
+  for (const f of [BAK_FILE, ...latestBackups()]) {
+    const d = fs.existsSync(f) && readJson(f)
+    if (d) { d._recovered = path.basename(f); return migrate(d) }
+  }
+  // Aucune copie saine : on n'écrase rien tant que l'utilisateur n'a pas été prévenu
+  dataLocked = true
+  const def = getDefaultData(); def._recovered = 'aucune'; return def
 }
 
 function saveData(data) {
   ensureDataDir()
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8')
+  if (!isValidData(data)) return false                 // refuse d'écrire des données vides ou cassées
+  if (dataLocked) return false
+  if (data._recovered) delete data._recovered
+  const json = JSON.stringify(data, null, 2)
+  const tmp  = DATA_FILE + '.tmp'
+  // 1. Écrire dans un fichier temporaire et forcer l'écriture sur le disque
+  const fd = fs.openSync(tmp, 'w')
+  try { fs.writeSync(fd, json, 0, 'utf8'); fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
+  // 2. Garder la version précédente, puis remplacer le fichier courant d'un coup
+  if (fs.existsSync(DATA_FILE) && readJson(DATA_FILE)) { try { fs.copyFileSync(DATA_FILE, BAK_FILE) } catch {} }
+  fs.renameSync(tmp, DATA_FILE)
+  // 3. Une copie par jour
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true })
+    const today = path.join(BACKUP_DIR, new Date().toISOString().slice(0, 10) + '.json')
+    if (!fs.existsSync(today)) fs.copyFileSync(DATA_FILE, today)
+    latestBackups().slice(BACKUP_DAYS).forEach(f => { try { fs.unlinkSync(f) } catch {} })
+  } catch {}
   return true
 }
 
@@ -105,7 +165,14 @@ function httpsGet(url, headers = {}, cookieJar = [], depth = 0) {
 // ── IPC handlers ──────────────────────────────────────────────────
 ipcMain.handle('data:load',   ()     => loadData())
 ipcMain.handle('app:reset',   ()     => {
-  if (fs.existsSync(DATA_FILE)) fs.unlinkSync(DATA_FILE)
+  // Garder une copie avant la réinitialisation
+  if (fs.existsSync(DATA_FILE)) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    try { fs.copyFileSync(DATA_FILE, path.join(DATA_DIR, 'investments.avant-reinitialisation-' + stamp + '.json')) } catch {}
+  }
+  // Repartir d'un fichier neuf (et non d'un fichier absent, qui déclencherait la récupération d'une copie)
+  dataLocked = false
+  saveData(getDefaultData())
   return true
 })
 ipcMain.handle('data:save',   (_, d) => saveData(d))
@@ -279,6 +346,17 @@ ipcMain.handle('file:save', async (_, filename, content) => {
 //   }
 // }
 const UPDATE_CHECK_URL = 'https://raw.githubusercontent.com/unyti/heredit-releases/main/update.json'
+// Seuls les fichiers publiés dans les releases du dépôt officiel sont acceptés
+const RELEASE_PREFIX   = 'https://github.com/unyti/heredit-releases/releases/download/'
+const DOWNLOAD_HOSTS   = ['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com']
+const isReleaseUrl = u => typeof u === 'string' && u.startsWith(RELEASE_PREFIX)
+const isSha256     = h => typeof h === 'string' && /^[a-f0-9]{64}$/i.test(h)
+function sha256File(file) {
+  return new Promise((resolve, reject) => {
+    const h = require('crypto').createHash('sha256')
+    fs.createReadStream(file).on('data', d => h.update(d)).on('end', () => resolve(h.digest('hex'))).on('error', reject)
+  })
+}
 
 const { shell } = require('electron')
 
@@ -314,6 +392,9 @@ async function checkForUpdates(silent = true) {
     const current = app.getVersion()
     log('Remote=' + info.version + ' current=' + current + ' gt=' + versionGt(info.version, current))
     if (versionGt(info.version, current)) {
+      if (!isReleaseUrl(info.files?.installer) || !isReleaseUrl(info.files?.portable)) {
+        log('Mise à jour ignorée : adresse de téléchargement non autorisée'); return null
+      }
       updateInfo = info
       return info
     }
@@ -340,6 +421,9 @@ async function downloadInstaller(url, destPath, onProgress) {
     const doReq = (reqUrl, depth = 0) => {
       if (depth > 5) return reject(new Error('Too many redirects'))
       const parsed = new URL(reqUrl)
+      if (parsed.protocol !== 'https:' || !DOWNLOAD_HOSTS.includes(parsed.hostname)) {
+        file.close(); return reject(new Error('Téléchargement refusé : hôte non autorisé (' + parsed.hostname + ')'))
+      }
       const req = https.get({ hostname: parsed.hostname, path: parsed.pathname + parsed.search }, res => {
         if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
           res.resume()
@@ -353,7 +437,7 @@ async function downloadInstaller(url, destPath, onProgress) {
           downloaded += chunk.length
           if (total > 0) { downloadProgress = Math.round(downloaded / total * 100); onProgress(downloadProgress) }
         })
-        res.on('end', () => { file.close(); resolve(destPath) })
+        res.on('end', () => { file.end(() => resolve(destPath)) })   // attendre l'écriture complète avant de vérifier l'empreinte
         res.on('error', err => { file.close(); reject(err) })
       })
       req.on('error', err => { file.close(); reject(err) })
@@ -374,6 +458,9 @@ ipcMain.handle('update:download-install', async (event) => {
   const fileUrl   = installed ? updateInfo.files?.installer : updateInfo.files?.portable
 
   if (!fileUrl) return { ok: false, error: 'URL de téléchargement manquante' }
+  if (!isReleaseUrl(fileUrl)) return { ok: false, error: 'Adresse de téléchargement non autorisée' }
+  const empreinte = updateInfo.sha256?.installer
+  if (installed && !isSha256(empreinte)) return { ok: false, error: 'Mise à jour sans empreinte de sécurité : installation refusée' }
 
   // Portable → ouvrir le navigateur, pas de remplacement auto
   if (!installed) {
@@ -391,6 +478,13 @@ ipcMain.handle('update:download-install', async (event) => {
       event.sender.send('update:progress', pct)
     })
 
+    // Vérifier que le fichier téléchargé est exactement celui publié (empreinte SHA-256)
+    const obtenue = await sha256File(tmpPath)
+    if (obtenue.toLowerCase() !== empreinte.toLowerCase()) {
+      try { fs.unlinkSync(tmpPath) } catch {}
+      return { ok: false, error: 'Fichier téléchargé différent de celui publié (empreinte invalide) : installation annulée' }
+    }
+
     // Attendre que Windows relâche le verrou sur le fichier (EBUSY sinon)
     await new Promise(r => setTimeout(r, 1200))
 
@@ -405,8 +499,8 @@ ipcMain.handle('update:download-install', async (event) => {
     setTimeout(() => app.quit(), 2000)
     return { ok: true, mode: 'install' }
   } catch(e) {
-    // Fallback : ouvrir l'explorateur sur le dossier temp pour lancement manuel
-    try { shell.showItemInFolder(tmpPath) } catch {}
+    // Téléchargement incomplet ou refusé : supprimer le fichier (ne jamais proposer de lancer un fichier non vérifié)
+    try { fs.unlinkSync(tmpPath) } catch {}
     return { ok: false, error: e.message }
   }
 })
@@ -441,6 +535,11 @@ function createWindow() {
     }
   })
 
+  // L'application ne navigue jamais hors de ses propres fichiers ; aucune nouvelle fenêtre
+  mainWindow.webContents.on('will-navigate', (e, url) => { if (!url.startsWith('file://')) e.preventDefault() })
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  mainWindow.webContents.on('will-attach-webview', e => e.preventDefault())
+
   mainWindow.maximize()
 
   mainWindow.loadFile('index.html')
@@ -457,7 +556,7 @@ function createWindow() {
   log('App started')
   mainWindow.webContents.on('did-finish-load', () => log('did-finish-load OK'))
   mainWindow.webContents.on('did-fail-load', (e, code, desc, url) => log('did-fail-load ' + code + ' ' + desc + ' ' + url))
-  mainWindow.webContents.on('crashed', () => log('renderer crashed'))
+  mainWindow.webContents.on('render-process-gone', (e, d) => log('renderer gone: ' + (d && d.reason)))
   mainWindow.webContents.on('unresponsive', () => log('renderer unresponsive'))
 
   // F12 ouvre les DevTools
@@ -476,6 +575,8 @@ app.whenReady().then(() => {
       callback({ requestHeaders: details.requestHeaders })
     }
   )
+  // Aucune permission sensible (caméra, micro, notifications, géolocalisation…)
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false))
   createWindow()
   // Check silencieux 5s après le démarrage pour ne pas bloquer le chargement
   setTimeout(() => checkForUpdates(true).then(info => {

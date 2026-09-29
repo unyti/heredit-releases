@@ -1,5 +1,16 @@
 # CHANGELOG — Heredit
 
+## v3.14.42 — 2026-09-29
+
+### Sécurité — lot 2
+- **Sauvegarde des données sûre** : écriture dans un fichier temporaire puis remplacement d'un coup (plus de fichier à moitié écrit en cas de coupure), copie de la version précédente (`investments.json.bak`) et une copie par jour dans `data/backups` (30 jours). Un fichier illisible n'est plus jamais écrasé par un portefeuille vide : il est mis de côté et l'application repart de la dernière copie saine, avec un message. Les données vides ou cassées sont refusées à l'écriture. La réinitialisation garde une copie des données.
+- **Mise à jour vérifiée** : GitHub calcule l'empreinte SHA-256 des fichiers publiés et l'inscrit dans `update.json` ; l'application refuse d'installer un fichier dont l'empreinte diffère ou qui ne vient pas des releases officielles. Un téléchargement incomplet est supprimé au lieu d'être proposé.
+- **Navigation verrouillée** : l'application ne peut ni ouvrir de nouvelle fenêtre ni naviguer vers un site externe ; aucune permission sensible (caméra, micro…) n'est accordée.
+- **Recherche de titre** : les noms renvoyés par Yahoo sont échappés (plus d'injection possible, « L'Oréal » s'affiche sans antislash).
+- **Electron 44** (au lieu de 29, plus maintenu depuis 2024) et electron-builder 26.
+
+---
+
 ## v3.14.41 — 2026-09-29
 
 ### Un seul P&L, partout

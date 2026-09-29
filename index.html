@@ -2432,6 +2432,10 @@ function cacPrev() { cacGoTo(cacSlideIdx - 1) }
 
 async function boot() {
   DB = await window.api.loadData()
+  const _recup = DB._recovered; delete DB._recovered
+  if (_recup) setTimeout(() => toast(_recup === 'aucune'
+      ? '⚠️ Fichier de données illisible et aucune copie trouvée. Rien n\'a été écrasé : contactez-moi avant de saisir quoi que ce soit.'
+      : 'Fichier de données illisible : données restaurées depuis la copie « ' + _recup + ' ». Le fichier abîmé a été mis de côté.', 'var(--gold)'), 1500)
   if (!DB.mouvements)    DB.mouvements = {}
   if (!DB.valorisations) DB.valorisations = {}
   if (!DB.tickerPeriodCache)    DB.tickerPeriodCache = {}    // cache en mémoire, non persisté
@@ -2597,7 +2601,11 @@ async function persist() {
     else hist.push(snap)
     if (hist.length > 1095) hist.splice(0, hist.length - 1095)
   }
-  await window.api.saveData(DB)
+  const ok = await window.api.saveData(DB)
+  if (ok === false && !persist._warned) {
+    persist._warned = true
+    toast('⚠️ Sauvegarde refusée : les données n\'ont pas été enregistrées.', 'var(--red)')
+  }
 }
 
 let _toastTimer = null
@@ -3477,12 +3485,18 @@ function hideDrop(id) {
   const d = document.getElementById(id); if (d) d.style.display = 'none'
 }
 
+// Échapper du texte venant de l'extérieur (Yahoo…) avant de l'insérer dans la page
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]))
+}
+let _tickerChoices = []   // résultats de recherche : on passe un index au clic, jamais le texte brut
+
 function _dropItem(label, sub, onmd) {
   return `<div style="padding:8px 12px;cursor:pointer;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px"
     onmousedown="${onmd}"
     onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background=''">
-    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</span>
-    <span style="font-family:monospace;color:var(--muted);font-size:11px;flex-shrink:0">${sub}</span>
+    <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(label)}</span>
+    <span style="font-family:monospace;color:var(--muted);font-size:11px;flex-shrink:0">${esc(sub)}</span>
   </div>`
 }
 
@@ -3524,12 +3538,11 @@ async function runTickerSearch(q) {
       drop.innerHTML = `<div style="padding:10px 12px;font-size:12px;color:var(--muted)">Aucun résultat</div>`
       return
     }
-    drop.innerHTML = quotes.map(r => {
-      const sym  = r.symbol || ''
-      const name = (r.shortname || r.longname || sym).replace(/'/g, '\\\'')
+    _tickerChoices = quotes.map(r => ({ sym: r.symbol || '', name: r.shortname || r.longname || r.symbol || '' }))
+    drop.innerHTML = quotes.map((r, k) => {
       const exch = r.exchDisp || ''
-      const sub  = exch ? sym + ' · ' + exch : sym
-      return _dropItem(name, sub, `selectTicker('${sym}','${name}',false)`)
+      const sub  = exch ? _tickerChoices[k].sym + ' · ' + exch : _tickerChoices[k].sym
+      return _dropItem(_tickerChoices[k].name, sub, `selectTicker(_tickerChoices[${k}].sym,_tickerChoices[${k}].name,false)`)
     }).join('')
     drop.style.display = 'block'
   } catch(e) {
