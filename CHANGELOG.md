@@ -1,5 +1,17 @@
 # CHANGELOG — Heredit
 
+## v3.14.46 — 2026-09-30
+
+### Finitions
+- **Export CSV supprimé** : seules restent l'exportation et l'importation JSON (sauvegarde complète). L'export JSON ouvre désormais la fenêtre « Enregistrer sous » de Windows.
+- **Tuiles catégories** : réparties en lignes équilibrées (6 tuiles → 6 ou 3 + 3), la tuile Crypto ne se retrouve plus seule sur sa ligne.
+- **Activité récente** : une prolongation affiche le nouveau taux et la nouvelle échéance au lieu de « 0 € » ; couleurs et signes alignés sur l'historique (perte, bonus, frais). Même correction dans l'historique.
+- **Revenus perçus** (tableau de bord) : limités aux catégories affichées, bonus inclus, détail trié par montant (« +2 autres » au lieu d'un « + » isolé).
+- **Libellés** : « Capital investi » partout (au lieu de « Capital déposé »), « X remboursés · Y en défaut », « +21 000 € P&L » sans espace parasite.
+- Noms et notes des mouvements échappés dans l'historique et l'activité.
+
+---
+
 ## v3.14.45 — 2026-09-29
 
 ### Défauts & pertes

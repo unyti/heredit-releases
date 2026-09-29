@@ -822,7 +822,7 @@ textarea
 
         <div id="kpi-grid" class="mb14"></div>
         <div id="objectif-bar" class="card mb14" style="padding:13px 17px;display:none"></div>
-        <div class="cat-mini-grid mb14" id="cat-mini-grid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))"></div>
+        <div class="cat-mini-grid mb14" id="cat-mini-grid"></div>
         <!-- Nouveaux blocs : échéances + activité récente -->
         <div class="grid2 mb14">
           <div class="card">
@@ -873,7 +873,6 @@ textarea
           </select>
           <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
             <button class="btn btn-ghost btn-sm" id="btn-refresh-tickers" onclick="manualRefreshTickers()" title="Mettre à jour les cours ISIN">↻ Cours</button>
-            <button class="btn btn-ghost btn-sm" onclick="exportCSV()" title="Exporter en CSV">⬇ CSV</button>
             <button class="btn btn-ghost btn-sm" id="btn-cols" onclick="toggleColsMenu(event)" title="Colonnes visibles" style="padding:5px 8px;font-size:11px;display:none">⊟ Cols</button>
             <div id="cols-menu" style="display:none;position:fixed;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--radius);padding:8px;z-index:1000;box-shadow:0 8px 30px rgba(0,0,0,.4);min-width:160px">
               <div style="font-size:10px;color:var(--muted);margin-bottom:6px;padding:0 2px">Colonnes visibles</div>
@@ -3718,6 +3717,20 @@ function renderDashEcheances() {
   }).join('')
 }
 
+// Tuiles catégories : lignes équilibrées (6 tuiles → 6 ou 3+3, jamais 5+1)
+function layoutCatGrid() {
+  const g = document.getElementById('cat-mini-grid')
+  if (!g) return
+  const n = g.children.length
+  if (!n) return
+  const w = g.clientWidth || 1000
+  const maxCols = Math.max(1, Math.floor((w + 10) / (175 + 10)))
+  const rows = Math.ceil(n / maxCols)
+  const cols = Math.ceil(n / rows)
+  g.style.gridTemplateColumns = 'repeat(' + cols + ', minmax(0, 1fr))'
+}
+window.addEventListener('resize', () => layoutCatGrid())
+
 function renderDashActivite() {
   const el = document.getElementById('dash-activite')
   if (!el) return
@@ -3734,20 +3747,30 @@ function renderDashActivite() {
     el.innerHTML = '<div class="dash-empty">Aucun mouvement enregistré</div>'
     return
   }
-  const typeColors = { depot:'var(--blue)', retrait:'var(--red)', dividende:'var(--gold)', interets:'var(--green)', frais:'var(--red)', achat:'var(--blue)', vente:'var(--gold)' }
-  const typeSigns  = { depot:'+', retrait:'-', dividende:'+', interets:'+', frais:'-', achat:'', vente:'+', fraisachat:'-' }
+  // Couleur et signe du point de vue de l'utilisateur : ce qui lui revient (+) / ce qui lui coûte (−)
+  const typeSigns  = { depot:'', achat:'', retrait:'', vente:'', dividende:'+', interets:'+', bonus:'+', frais:'−', fraisachat:'−', perte:'−' }
   el.innerHTML = recent.map(({ mvt, inv }) => {
-    const col   = typeColors[mvt.type] || 'var(--muted)'
-    const sign  = typeSigns[mvt.type] || ''
-    const lbl   = MVT_TYPES[mvt.type]?.label || mvt.type
-    const plCol = (sign === '+') ? 'var(--green)' : (sign === '-') ? 'var(--red)' : 'var(--muted)'
+    const cfg   = MVT_TYPES[mvt.type] || {}
+    const col   = cfg.color || 'var(--muted)'
+    const sign  = typeSigns[mvt.type] ?? ''
+    const lbl   = cfg.label || mvt.type
+    const plCol = (sign === '+') ? 'var(--green)' : (sign === '−') ? 'var(--red)' : 'var(--text)'
+    let val
+    if (mvt.type === 'prolongation') {
+      const parts = []
+      if (mvt.nouveauTaux) parts.push(String(Number(mvt.nouveauTaux)).replace('.',',') + ' %')
+      if (mvt.nouvelleEcheance) parts.push('→ ' + fmtDate(mvt.nouvelleEcheance))
+      val = '<span style="color:var(--muted)">' + (parts.join(' · ') || '—') + '</span>'
+    } else {
+      val = '<span style="color:' + plCol + '">' + sign + fmt(Number(mvt.montant),0) + '</span>'
+    }
     return '<div class="dash-act-row">'
       + '<div class="dash-act-dot" style="background:' + col + '"></div>'
       + '<div style="flex:1;min-width:0">'
-      +   '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + inv.nom + '</div>'
+      +   '<div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(inv.nom) + '</div>'
       +   '<div class="dash-ech-sub">' + lbl + ' · ' + fmtDate(mvt.date) + '</div>'
       + '</div>'
-      + '<div class="dash-act-val blur-num" style="color:' + plCol + '">' + sign + fmt(Number(mvt.montant),0) + '</div>'
+      + '<div class="dash-act-val blur-num">' + val + '</div>'
       + '</div>'
   }).join('')
 }
@@ -3769,23 +3792,20 @@ function renderDashboard() {
   const displayVal = isNet ? tNet : tA
   const pvTotal = visInv.reduce((s,d) => { const p=plForPeriod(d,dashPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
 
-  const totalRevenus = inv.reduce((s,i) => {
-    const mvts = DB.mouvements[i.id] || []
-    return s + mvts.filter(m=>m.type==='dividende'||m.type==='interets').reduce((ss,m)=>ss+Number(m.montant),0)
-  }, 0)
-  const revEstim = inv.filter(i=>i.rendement&&i.statut==='En cours')
+  // Revenus perçus : dividendes, intérêts et bonus des catégories affichées
+  const _REV = ['dividende','interets','bonus']
+  const _revParInv = visInv.map(i => ({ nom:i.nom, tot:(DB.mouvements[i.id] || []).filter(m=>_REV.includes(m.type)).reduce((s,m)=>s+Number(m.montant),0) }))
+    .filter(x => x.tot > 0).sort((a,b) => b.tot - a.tot)
+  const totalRevenus = _revParInv.reduce((s,x) => s + x.tot, 0)
+  const revEstim = visInv.filter(i=>i.rendement&&i.statut==='En cours')
     .reduce((s,i) => s + computeStats(i).capitalNet * (Number(i.rendement)/100), 0)
-  const revDetail = inv.map(i => {
-    const mvts = DB.mouvements[i.id] || []
-    const tot = mvts.filter(m=>m.type==='dividende'||m.type==='interets').reduce((s,m)=>s+Number(m.montant),0)
-    return tot > 0 ? i.nom+' '+fmt(tot) : null
-  }).filter(Boolean)
+  const revDetail = _revParInv.map(x => esc(x.nom)+' '+fmt(x.tot))
 
   const _plLabel = {total:'total',ytd:'YTD','1j':'1J','7j':'7J','1m':'1M','3m':'3M','1y':'1A'}[dashPeriod]||dashPeriod
   const _plColor = pvTotal>=0?'var(--green)':'var(--red)'
   const _heroSubHtml = isNet
     ? 'Brut\u00a0: <span class="blur-num">'+fmt(tA)+'</span>\u2002\u00b7\u2002Dettes\u00a0: <span class="blur-num">'+fmt(totalDettes)+'</span>'
-    : 'Capital\u00a0d\u00e9pos\u00e9\u00a0: <span class="blur-num">'+fmt(tI)+'</span>'
+    : 'Capital\u00a0investi\u00a0: <span class="blur-num">'+fmt(tI)+'</span>'
   const _heroHtml = '<div class="kpi-hero" onclick="copyKPI(\''+fmt(displayVal)+'\',\''+(isNet?'Patrimoine net':'Patrimoine brut')+'\')" title="Cliquer pour copier" style="border-top-color:var(--blue)">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
     +   '<div><div class="kpi-lbl">'+(isNet?'Patrimoine net':'Patrimoine brut')+'</div>'
@@ -3798,11 +3818,14 @@ function renderDashboard() {
   const _secKpis = [
     { l:'P&amp;L '+_plLabel, v:(pvTotal>=0?'+':'')+fmt(pvTotal), s:'Perf.\u00a0: '+(tI>0?(pvTotal>=0?'+':'')+((pvTotal/tI)*100).toFixed(2)+'%':'--'), c:_plColor },
     { l:'Revenus\u00a0per\u00e7us', v:fmt(totalRevenus), s:(()=>{
-        if (revDetail.length) return revDetail.slice(0,2).join(' \u00b7 ')+(revDetail.length>2?' +':'')
+        if (revDetail.length) return revDetail.slice(0,2).join(' \u00b7 ')+(revDetail.length>2?' \u00b7 +'+(revDetail.length-2)+' autre'+(revDetail.length>3?'s':''):'')
         if (revEstim>0) return '~'+fmt(revEstim)+'/an estim\u00e9s'
         return 'Aucun mouvement'
       })(), c:'var(--gold)' },
-    { l:'En\u00a0cours', v:String(inv.filter(d=>d.statut==='En cours').length), s:inv.filter(d=>d.statut==='Remboursé').length+' remboursés', c:'var(--green)' },
+    { l:'En\u00a0cours', v:String(visInv.filter(d=>d.statut==='En cours').length), s:(()=>{
+        const clos = visInv.filter(d=>d.statut==='Remboursé').length, def = visInv.filter(d=>d.statut==='Défaut').length
+        return clos+' remboursé'+(clos>1?'s':'') + (def ? ' \u00b7 '+def+' en défaut' : '')
+      })(), c:'var(--green)' },
   ]
   const _secHtml = _secKpis.map(k=>'<div class="kpi" style="border-top-color:'+k.c+';cursor:pointer" onclick="copyKPI(\''+k.v+'\',\''+k.l+'\')" title="Cliquer pour copier">'
     +'<div class="kpi-lbl">'+k.l+'</div>'
@@ -3816,8 +3839,9 @@ function renderDashboard() {
   document.getElementById('cat-mini-grid').innerHTML = visCats.map(c => {
     const a = agg[c.id] || { capitalNet:0, valeur:0, pl:0 }
     const d = a.pl
-    return `<div class="cat-mini" onclick="filterByCat('${c.id}')" style="border-left-color:${c.color}"><div class="cm-icon">${c.icon}</div><div class="cm-body"><div class="cm-name">${c.label}</div><div class="cm-val blur-num" style="color:${c.color}">${fmt(a.valeur)}</div><div class="cm-delta blur-num" style="color:${d>=0?'var(--green)':'var(--red)'}">${d>=0?'+':''} ${fmt(d)} P&L</div></div></div>`
+    return `<div class="cat-mini" onclick="filterByCat('${c.id}')" style="border-left-color:${c.color}"><div class="cm-icon">${c.icon}</div><div class="cm-body"><div class="cm-name">${c.label}</div><div class="cm-val blur-num" style="color:${c.color}">${fmt(a.valeur)}</div><div class="cm-delta blur-num" style="color:${d>=0?'var(--green)':'var(--red)'}">${d>=0?'+':''}${fmt(d)} P&L</div></div></div>`
   }).join('')
+  layoutCatGrid()
 
   renderDonut(agg, tA, visCats)
   renderBarChart(agg, visCats)
@@ -5992,10 +6016,6 @@ function renderAnaKPIBand() {
   const nCours = inv.filter(i=>i.statut==='En cours').length
   const nRemb  = inv.filter(i=>i.statut==='Remboursé').length
   const nDef   = inv.filter(i=>i.statut==='Défaut').length
-  // TRI moyen
-  let triSum=0, triN=0
-  inv.forEach(i=>{ const t=computeTRI(i); if(t!==null&&isFinite(t)){triSum+=t;triN++} })
-  const triMoy = triN>0 ? triSum/triN : null
   // Revenus 12 mois
   const yearAgo = new Date(); yearAgo.setFullYear(yearAgo.getFullYear()-1)
   const yAStr = yearAgo.toISOString().slice(0,10)
@@ -6012,7 +6032,7 @@ function renderAnaKPIBand() {
     { val: (pvTotal>=0?'+':'')+fmt(pvTotal,0), lbl: 'P&L '+plLabel, sub: (pctGlob>=0?'+':'')+pctGlob.toFixed(1)+'%', col: plCol, blur: true },
     { val: plRealTotal !== 0 ? (plRealTotal>0?'+':'')+fmt(plRealTotal,0) : '—', lbl: 'Gains réalisés', sub: plRealTotal !== 0 ? 'ventes & clôtures' : 'aucune vente', col: plRealTotal>0?'var(--green)':plRealTotal<0?'var(--red)':'var(--muted)', blur: plRealTotal!==0 },
     { val: fmt(rev12/12,0), lbl: 'Revenus/mois', sub: fmt(rev12,0)+' sur 12m', col: 'var(--blue)', blur: true },
-    { val: nCours+'', lbl: 'En cours', sub: nRemb+' remboursés'+(nDef?' · '+nDef+' défaut':''), col: 'var(--green)', blur: false },
+    { val: nCours+'', lbl: 'En cours', sub: nRemb+' remboursé'+(nRemb>1?'s':'')+(nDef?' · '+nDef+' en défaut':''), col: 'var(--green)', blur: false },
   ]
   el.style.display = 'grid'
   el.style.gridTemplateColumns = 'repeat(6,1fr)'
@@ -6774,8 +6794,7 @@ function renderAide() {
         p('Vous pouvez sauvegarder et restaurer intégralement vos données :')
         + table(['Action','Format','Usage'],
           [['Export JSON','heredit-export.json','Sauvegarde complète de toutes les données'],
-           ['Import JSON','heredit-export.json','Restaurer depuis une sauvegarde'],
-           ['Export CSV','investissements.csv','Exploiter vos données dans Excel ou Google Sheets']])
+           ['Import JSON','heredit-export.json','Restaurer depuis une sauvegarde']])
         + warn('L\'import JSON <strong>remplace intégralement</strong> les données existantes. Faites un export avant de restaurer.')
       )
       + block('Objectif patrimonial',
@@ -6971,80 +6990,18 @@ function askResetProfile() {
   )
 }
 
-function exportCSV() {
-  const list = investments()
-  const BOM  = '\uFEFF'  // UTF-8 BOM pour Excel
-  const esc  = v => {
-    if (v === null || v === undefined) return ''
-    const s = String(v).replace(/"/g, '""')
-    return /[;",\n]/.test(s) ? '"' + s + '"' : s
-  }
-
-  const headers = [
-    'Nom','Catégorie','Sous-catégorie','Statut',
-    'Capital investi (€)','Valeur actuelle (€)','P&L (€)','P&L (%)',
-    'TRI (% annuel)','Rendement fixe (%/an)',
-    'Frais achat (€)','Frais annuels (%)',
-    'Date investissement','Échéance','PRU (€)','Quantité',
-    'Ticker','Notes'
-  ]
-
-  const rows = list.map(i => {
-    const s    = computeStats(i)
-    const cat  = getCat(i.cat)
-    const sub  = i.subcat ? DB.categories.find(x=>x.id===i.subcat) : null
-    const tri  = computeTRI(i)
-    const pl   = s.valeur - s.capitalNet
-    const plPct= s.capitalNet > 0 ? ((pl / s.capitalNet) * 100).toFixed(2) : ''
-    const triStr = tri !== null ? (tri * 100).toFixed(2) : ''
-    const pruRaw = fmtPRU(i)
-    const pru  = pruRaw ? pruRaw.replace('\u00a0','').replace('\u20ac','').trim() : ''
-
-    return [
-      i.nom,
-      cat?.label || '',
-      sub?.label || '',
-      i.statut || '',
-      s.capitalNet.toFixed(2),
-      s.valeur.toFixed(2),
-      pl.toFixed(2),
-      plPct,
-      triStr,
-      i.rendement || '',
-      i.fraisAchat || '',
-      i.fraisAnnuels || '',
-      i.date || '',
-      i.echeance || '',
-      pru,
-      i.quantite || '',
-      i.resolvedTicker || i.ticker || '',
-      i.notes || ''
-    ].map(esc).join(';')
-  })
-
-  const csv      = BOM + headers.map(esc).join(';') + '\n' + rows.join('\n')
-  const filename = 'heredit-' + new Date().toISOString().slice(0,10) + '.csv'
-  if (window.api?.saveFile) {
-    window.api.saveFile(filename, csv).then(saved => {
-      if (saved) toast('CSV exporté — ' + list.length + ' lignes')
-    }).catch(() => {
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}))
-      a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a)
-      toast('CSV exporté — ' + list.length + ' lignes')
-    })
-  } else {
-    const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([csv], {type:'text/csv;charset=utf-8'}))
-    a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a)
-    toast('CSV exporté — ' + list.length + ' lignes')
-  }
-}
-
 function exportData() {
-  const a=document.createElement('a')
-  a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(DB,null,2))
-  a.download='heredit-export-'+new Date().toISOString().slice(0,10)+'.json'
+  const json = JSON.stringify(DB, null, 2)
+  const filename = 'heredit-export-' + new Date().toISOString().slice(0,10) + '.json'
+  if (window.api?.saveFile) {
+    window.api.saveFile(filename, json)
+      .then(saved => { if (saved) toast('Données exportées') })
+      .catch(() => toast("Échec de l'export", 'var(--red)'))
+    return
+  }
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([json], { type:'application/json' }))
+  a.download = filename
   a.click(); toast('Export téléchargé')
 }
 function saveUserInfo() {
@@ -7368,13 +7325,13 @@ function renderHistory() {
       +'<div class="hist-dot" style="background:'+col+'"></div>'
       +'<div style="flex:1;min-width:0">'
       +  '<div style="font-size:12px;font-weight:500">'+cfg.icon+' '+libelle+'</div>'
-      +  '<div class="hist-inv">'+inv.nom+' · <span style="color:'+(cat?.color||'var(--muted)')+'">'+( cat?.icon||'')+' '+(cat?.label||'')+'</span></div>'
+      +  '<div class="hist-inv">'+esc(inv.nom)+' · <span style="color:'+(cat?.color||'var(--muted)')+'">'+( cat?.icon||'')+' '+(cat?.label||'')+'</span></div>'
       +  (mvt.type === 'prolongation'
-        ? '<div class="hist-note" style="color:var(--orange,#f59e0b)">'+(mvt.nouveauTaux!=null?'→ '+mvt.nouveauTaux+'%/an ':'' )+(mvt.nouvelleEcheance?'⏩ '+fmtDate(mvt.nouvelleEcheance):'' )+(mvt.note?' — '+mvt.note:'' )+'</div>'
-        : (mvt.note ? '<div class="hist-note">'+mvt.note+'</div>' : ''))
+        ? '<div class="hist-note" style="color:var(--orange,#f59e0b)">'+(mvt.nouveauTaux!=null?'→ '+mvt.nouveauTaux+'%/an ':'' )+(mvt.nouvelleEcheance?'⏩ '+fmtDate(mvt.nouvelleEcheance):'' )+(mvt.note?' — '+esc(mvt.note):'' )+'</div>'
+        : (mvt.note ? '<div class="hist-note">'+esc(mvt.note)+'</div>' : ''))
       +'</div>'
       +'<div class="hist-date">'+fmtDate(mvt.date)+'</div>'
-      +'<div class="hist-amount blur-num" style="color:'+plCol+'">'+sign+fmt(Number(mvt.montant),2)+'</div>'
+      +'<div class="hist-amount blur-num" style="color:'+plCol+'">'+(mvt.type === 'prolongation' && !Number(mvt.montant) ? '—' : sign+fmt(Number(mvt.montant),2))+'</div>'
       +'</div>'
   }).join('')
 }

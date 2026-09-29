@@ -325,9 +325,10 @@ ipcMain.handle('dividend:fetch', async (_, ticker) => {
 })
 
 ipcMain.handle('file:save', async (_, filename, content) => {
-  const { filePath, canceled } = await dialog.showSaveDialog({
-    defaultPath: filename,
-    filters: [{ name: 'CSV', extensions: ['csv'] }]
+  if (typeof filename !== 'string' || typeof content !== 'string') return false
+  const { filePath, canceled } = await dialog.showSaveDialog(mainWindow, {
+    defaultPath: path.basename(filename),
+    filters: [{ name: 'Sauvegarde Heredit', extensions: ['json'] }]
   })
   if (canceled || !filePath) return false
   fs.writeFileSync(filePath, content, 'utf8')
