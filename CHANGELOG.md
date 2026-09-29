@@ -1,5 +1,14 @@
 # CHANGELOG — Heredit
 
+## v3.14.44 — 2026-09-29
+
+### Analyses › Évolution du patrimoine
+- **Filtre par catégorie** : le bouton « Catégories » est disponible sur Analyses. Masquer une catégorie (ex. Immobilier) l'exclut de la courbe, des indicateurs et des répartitions, comme sur le tableau de bord. Le bouton indique le nombre de catégories masquées et reste ouvert pendant les réglages.
+- **CAC 40 / S&P 500 réparés** : le code de l'indice était encodé deux fois (`%255EFCHI`), Yahoo ne renvoyait rien et aucune courbe ne s'affichait. Un message prévient si les cours sont indisponibles.
+- **Comparaison honnête** : la courbe de l'indice montre ce que vaudraient les mêmes versements, aux mêmes dates, placés dans l'indice (et non plus l'indice recalé sur le premier mois, qui comptait vos nouveaux versements comme de la performance). Historique jusqu'à 10 ans.
+
+---
+
 ## v3.14.43 — 2026-09-29
 
 ### Un seul patrimoine, partout — lot 3

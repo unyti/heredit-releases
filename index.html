@@ -1879,12 +1879,12 @@ async function refreshAllTickers() {
   tickerRefreshTimer = setTimeout(refreshAllTickers, 5 * 60000)
 }
 
-async function fetchTickerMonthlyHistory(ticker) {
+async function fetchTickerMonthlyHistory(ticker, range = '2y') {
   if (!DB.tickerHistoryCache) DB.tickerHistoryCache = {}
   const cached = DB.tickerHistoryCache[ticker]
-  if (cached && (Date.now() - (cached.ts||0)) < 60*60000) return cached.data
+  if (cached && (Date.now() - (cached.ts||0)) < 60*60000 && Object.keys(cached.data||{}).length > 1) return cached.data
   const url = 'https://query1.finance.yahoo.com/v8/finance/chart/'
-    + encodeURIComponent(ticker) + '?interval=1mo&range=2y&includePrePost=false'
+    + encodeURIComponent(ticker) + '?interval=1mo&range=' + range + '&includePrePost=false'
   try {
     const res  = await fetchWT(url)
     if (!res.ok) return {}
@@ -2103,17 +2103,7 @@ function renderPatrimoineChart() {
   let _bNormPre = []
   if (benchmarkMode !== 'none') {
     const _bT = BENCH_TICKERS[benchmarkMode]
-    const _bH = DB.tickerHistoryCache?.[_bT]?.data || {}
-    if (Object.keys(_bH).length > 1) {
-      let _last = null
-      const _bP = series.map(pt => {
-        const p = _bH[pt.date.slice(0,7)+'-01'] || findNearestPrice(_bH, pt.date)
-        if (p) _last = p
-        return _last
-      })
-      const _bBase = _bP.find(p=>p)
-      if (_bBase) _bNormPre = _bP.map(p => p ? series[0].valeur*(p/_bBase) : null)
-    }
+    _bNormPre = benchSeries(series, DB.tickerHistoryCache?.[_bT]?.data) || []
   }
 
   const allVals  = [...values, ...capitals, ..._bNormPre.filter(v=>v!==null)]
@@ -2143,24 +2133,14 @@ function renderPatrimoineChart() {
   }
 
   // ── Benchmark : courbe base 100 optionnelle
-  let benchSvg = ''
+  let benchSvg = '', benchLegendSvg = ''
   window._benchNorm = null
   if (benchmarkMode !== 'none') {
     const bTicker = BENCH_TICKERS[benchmarkMode]
-    const bHist   = DB.tickerHistoryCache?.[bTicker]?.data || {}
-    if (Object.keys(bHist).length > 1) {
-      // Récupérer les prix benchmark aux mêmes dates que series (forward-fill pour garder alignement)
-      let lastPrice = null
-      const bPrices = series.map(pt => {
-        const mk = pt.date.slice(0,7) + '-01'
-        const p  = bHist[mk] || findNearestPrice(bHist, pt.date)
-        if (p) lastPrice = p
-        return lastPrice  // forward-fill : garder la dernière valeur connue
-      })
-      const bBase = bPrices.find(p => p)  // première valeur non-null
-      if (bBase && bPrices.filter(Boolean).length >= 2) {
-        const patBase = series[0].valeur
-        const bNorm   = bPrices.map(p => p ? patBase * (p / bBase) : null)
+    const bNorm0  = benchSeries(series, DB.tickerHistoryCache?.[bTicker]?.data)
+    if (bNorm0) {
+      {
+        const bNorm   = bNorm0
         // Stocker pour le tooltip
         window._benchNorm = bNorm
         // Construire le path SVG (segments continus uniquement)
@@ -2170,9 +2150,9 @@ function renderPatrimoineChart() {
           bPath += (bPath==='' ? 'M' : 'L') + xS(i).toFixed(1)+','+yS(v).toFixed(1)
         })
         const bColor = benchmarkMode === 'cac' ? 'var(--blue)' : 'var(--purple)'
-        const bLabel = benchmarkMode === 'cac' ? 'CAC 40' : 'S&P 500'
+        const bLabel = (benchmarkMode === 'cac' ? 'CAC 40' : 'S&P 500') + ' — mêmes versements'
         benchSvg = '<path d="'+bPath+'" fill="none" stroke="'+bColor+'" stroke-width="1.5" stroke-dasharray="5,3" opacity="0.8"/>'
-          + '<text x="'+(W-PAD.right-4)+'" y="'+(PAD.top-4)+'" text-anchor="end" fill="'+bColor+'" font-size="10" font-family=\"DM Mono,monospace\">'+bLabel+'</text>'
+        benchLegendSvg = '<text x="'+(PAD.left+120)+'" y="'+(PAD.top-4)+'" fill="'+bColor+'" font-size="10" font-family="Outfit,sans-serif">- - '+bLabel+'</text>'
       }
     }
   }
@@ -2228,6 +2208,7 @@ function renderPatrimoineChart() {
     ${xSvg}
     <text x="${W-PAD.right}" y="${PAD.top-4}" text-anchor="end" fill="${deltaColor}" font-size="11" font-family="DM Mono,monospace" font-weight="600">${deltaStr}</text>
     <text x="${PAD.left+8}" y="${PAD.top-4}" fill="var(--muted)" font-size="10" font-family="Outfit,sans-serif">— — Capital investi</text>
+    ${benchLegendSvg}
     <rect id="chart-hover-line" x="0" y="${PAD.top}" width="1" height="${cH}" fill="var(--border2)" opacity="0" pointer-events="none"/>
     <rect x="${PAD.left}" y="${PAD.top}" width="${cW}" height="${cH}" fill="transparent" id="chart-overlay"
       onmousemove="chartHover(event,${JSON.stringify(series).replace(/"/g,'&quot;')},${PAD.left},${cW},${PAD.top},${cH},${W})"
@@ -3261,7 +3242,10 @@ function showPage(id, el) {
   const titles = { dashboard:'Tableau de bord', portfolio:'Portefeuille', analytics:'Analyses', finances:'Finances', settings:'Paramètres', aide:'Aide & Guide' }
   updateBreadcrumb(titles[id] || '', null)
   document.getElementById('btn-add').style.display = ['settings','aide'].includes(id) ? 'none' : ''
-  document.getElementById('dash-controls').style.display = id==='dashboard' ? 'flex' : 'none'
+  document.getElementById('dash-controls').style.display = (id==='dashboard' || id==='analytics') ? 'flex' : 'none'
+  const _btnNet = document.getElementById('btn-patrimoine-mode')
+  if (_btnNet) _btnNet.style.display = id==='dashboard' ? '' : 'none'
+  updateCatFilterBtn()
   const hasLive = ['dashboard','portfolio','analytics'].includes(id)
   document.getElementById('global-period-bar').style.display = hasLive ? '' : 'none'
   const btnRef = document.getElementById('btn-refresh-global')
@@ -3614,14 +3598,18 @@ function toggleCatFilter(e) {
   const pop = document.getElementById('cat-filter-pop')
   const visible = pop.style.display !== 'none'
   if (visible) { pop.style.display = 'none'; return }
+  renderCatFilterPop()
+  pop.style.display = 'block'
+  setTimeout(() => document.addEventListener('click', ev => { if (!pop.contains(ev.target)) pop.style.display='none' }, { once:true }), 50)
+}
+function renderCatFilterPop() {
+  const pop = document.getElementById('cat-filter-pop')
   const hidden = DB.settings.hiddenCats || []
   pop.innerHTML = '<div style="font-size:10.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px">Afficher / masquer</div>' +
     rootCats().map(c => {
       const isHidden = hidden.includes(c.id)
       return `<div class="popover-item" onclick="toggleCatVisibility('${c.id}')"><div class="chk${isHidden?'':' checked'}">${isHidden?'':' ✓'}</div><div class="cat-dot" style="background:${c.color}"></div><span>${c.icon} ${c.label}</span></div>`
     }).join('')
-  pop.style.display = 'block'
-  setTimeout(() => document.addEventListener('click', ()=>{ pop.style.display='none' }, { once:true }), 50)
 }
 
 function toggleCatVisibility(cid) {
@@ -3629,7 +3617,12 @@ function toggleCatVisibility(cid) {
   const idx = DB.settings.hiddenCats.indexOf(cid)
   if (idx >= 0) DB.settings.hiddenCats.splice(idx, 1)
   else DB.settings.hiddenCats.push(cid)
-  persist(); renderDashboard(); toggleCatFilter({ stopPropagation:()=>{} })
+  persist(); renderCatFilterPop(); updateCatFilterBtn(); refreshCurrentPage()
+}
+function updateCatFilterBtn() {
+  const n = (DB.settings.hiddenCats || []).length
+  const b = document.getElementById('btn-cat-filter')
+  if (b) b.textContent = '🏷 Catégories' + (n ? ' (' + n + ' masquée' + (n > 1 ? 's' : '') + ')' : '') + ' ▾'
 }
 
 function togglePatrimoineMode() {
@@ -6062,7 +6055,7 @@ function renderAnaRanking() {
 }
 
 let benchmarkMode = 'none'  // 'none' | 'cac' | 'sp500'
-const BENCH_TICKERS = { cac: '%5EFCHI', sp500: '%5EGSPC' }
+const BENCH_TICKERS = { cac: '^FCHI', sp500: '^GSPC' }   // encodés une seule fois à l'appel
 
 async function setBenchmark(b) {
   benchmarkMode = b
@@ -6070,10 +6063,28 @@ async function setBenchmark(b) {
     el.className = 'btn btn-xs ' + (el.dataset.b === b ? 'btn-primary' : 'btn-ghost')
   })
   if (b !== 'none') {
-    const ticker = BENCH_TICKERS[b]
-    await fetchTickerMonthlyHistory(ticker)
+    const hist = await fetchTickerMonthlyHistory(BENCH_TICKERS[b], '10y')
+    if (!hist || Object.keys(hist).length < 2) {
+      toast('Cours de l’indice indisponibles pour le moment (connexion à Yahoo Finance).', 'var(--gold)')
+    }
   }
   renderPatrimoineChart()
+}
+
+// Comparaison honnête à un indice : on investit dans l'indice les MÊMES sommes, aux MÊMES dates,
+// que dans le patrimoine (variations du capital investi). La courbe montre ce que ces versements vaudraient.
+function benchSeries(series, hist) {
+  if (!hist || Object.keys(hist).length < 2) return null
+  let parts = 0, capPrec = 0, dernierPrix = null
+  const out = series.map(pt => {
+    const p = hist[pt.date.slice(0,7)+'-01'] || findNearestPrice(hist, pt.date)
+    if (p) dernierPrix = p
+    if (!dernierPrix) return null
+    parts  += (pt.capitalNet - capPrec) / dernierPrix
+    capPrec = pt.capitalNet
+    return Math.round(Math.max(0, parts) * dernierPrix * 100) / 100
+  })
+  return out.filter(v => v !== null).length >= 2 ? out : null
 }
 
 function renderAnaCatEvo() {
