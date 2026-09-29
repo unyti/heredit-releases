@@ -2799,7 +2799,13 @@ function computeStats(inv, asOf) {
     events.push(ev)
   }
   events.sort((a,b) => a.date.localeCompare(b.date))
-  let runningQte = 0   // quantité courante — pour calcul PRU exact au moment des ventes
+  // Quantité détenue au départ : inv.quantite est la quantité ACTUELLE (mise à jour à chaque achat/vente),
+  // on remonte donc à la quantité initiale = actuelle + titres vendus − titres achetés ensuite.
+  const _allQ = getMvts(inv.id)
+  const qteInitiale = Math.max(0, (Number(inv.quantite) || 0)
+    + _allQ.filter(m => m.type === 'vente').reduce((s, m) => s + (Number(m.quantite) || 0), 0)
+    - _allQ.filter(m => m.type === 'achat').reduce((s, m) => s + (Number(m.quantite) || 0), 0))
+  let runningQte = qteInitiale   // quantité courante — pour calcul PRU exact au moment des ventes
 
   if (!events.length) {
     const fraisAchat0b = Number(inv.fraisAchat)||0
@@ -2899,7 +2905,7 @@ function computeStats(inv, asOf) {
   if (!asOf && inv.ticker && inv.quantite > 0 && inv.prixUnitaire > 0) {
     const liveVal = Math.round(inv.prixUnitaire * inv.quantite * 100) / 100
     const cn = Math.max(0, capitalNet)
-    const plRealLive = Math.round((recettesVentes - capitalEngageVentes)*100)/100; return { valeur: liveVal, capitalNet: cn, pl: liveVal - cn + revenus, plRealise: plRealLive > 0 ? plRealLive : 0, revenus, mode, mvtCount: mvts.length, isLive: true }
+    const plRealLive = Math.round((recettesVentes - capitalEngageVentes)*100)/100; return { valeur: liveVal, capitalNet: cn, pl: liveVal - cn + revenus, plRealise: plRealLive, revenus, mode, mvtCount: mvts.length, isLive: true }
   }
 
   // Projection à l'échéance pour les placements à rendement fixe
@@ -2924,7 +2930,7 @@ function computeStats(inv, asOf) {
     valeur:         Math.max(0, solde),
     capitalNet:     Math.max(0, capitalNet),
     pl:             plTotal,
-    plRealise:      plRealise > 0 ? plRealise : 0,
+    plRealise:      plRealise,
     ventesDetail,
     revenus,
     valeurProjetee,

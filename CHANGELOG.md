@@ -1,5 +1,13 @@
 # CHANGELOG — Heredit
 
+## v3.14.39 — 2026-09-29
+
+### Corrections — Analyses › Gains & pertes réalisés
+- **PRU jamais affiché** : le calcul partait d'une quantité de 0 titre, car la quantité de l'achat initial n'était pas prise en compte (seuls les mouvements « Achat » l'étaient). Heredit retrouve maintenant la quantité de départ (quantité actuelle + titres vendus − titres achetés ensuite). Exemple : Totalenergies, PRU 54,43 € pour une vente à 74,27 €.
+- **Pertes de cession masquées** : une moins-value était affichée à 0 €. Elle apparaît maintenant en négatif, dans le tableau comme dans le P&L des positions clôturées (ex. Coface : −1,86 €, frais d'achat compris).
+
+---
+
 ## v3.14.38 — 2026-09-28
 
 ### Corrections
