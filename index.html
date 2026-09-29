@@ -145,11 +145,11 @@ body.blur-mode .blur-num{filter:blur(6px);user-select:none;transition:filter .2s
 .ana-section-body{padding:16px;border-top:1px solid var(--border)}
 .ana-section.collapsed .ana-section-arrow{transform:rotate(-90deg)}
 .ana-section.collapsed .ana-section-body{display:none}
-.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;border-top:3px solid transparent;box-shadow:var(--card-shadow);transition:background .2s}
+.kpi{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;border-top:3px solid transparent;box-shadow:var(--card-shadow);transition:background .2s}
 
 /* KPI dashboard layout */
 #kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
-.kpi-hero{background:linear-gradient(135deg,var(--bg2) 0%,var(--bg3) 100%);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:18px 20px;border-top:3px solid var(--blue);box-shadow:var(--card-shadow);cursor:pointer;transition:all .2s}
+.kpi-hero{background:linear-gradient(135deg,var(--bg2) 0%,var(--bg3) 100%);border:1px solid var(--border2);border-radius:var(--radius-lg);padding:14px 20px;border-top:3px solid var(--blue);box-shadow:var(--card-shadow);cursor:pointer;transition:all .2s}
 .kpi-hero:hover{box-shadow:0 6px 28px rgba(0,0,0,.35)}
 .kpi-hero .kpi-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;margin-bottom:8px}
 .kpi-hero .kpi-val{font-family:'DM Serif Display',serif;font-size:28px;line-height:1;letter-spacing:-1px}
@@ -464,6 +464,11 @@ textarea
 .chk.checked{background:var(--blue);border-color:var(--blue);color:#fff}
 #confirm{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center}
 #confirm.open{display:flex}
+#liq-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center}
+#liq-modal.open{display:flex}
+.liq-box{background:var(--bg2);border:1px solid var(--border2);border-radius:16px;padding:22px 24px;width:340px;max-width:calc(100vw - 32px)}
+.liq-chip{font-size:10px;color:var(--muted2);cursor:pointer;border-radius:6px;padding:1px 5px;border:1px solid transparent}
+.liq-chip:hover{border-color:var(--border2);color:var(--text)}
 .confirm-box{background:var(--bg2);border:1px solid rgba(248,113,113,.3);border-radius:16px;padding:26px;text-align:center;max-width:340px}
 .ci{font-size:34px;margin-bottom:9px}
 .ct{font-size:15px;font-weight:700;margin-bottom:5px}
@@ -1017,7 +1022,7 @@ textarea
         <div class="card mb14" id="ana-realised-card">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
             <div class="card-title" style="margin-bottom:0">✅ Gains &amp; pertes réalisés</div>
-            <div id="ana-realised-subtitle" style="font-size:10px;color:var(--muted)">Cessions · Pertes · Dividendes · Intérêts</div>
+            <div id="ana-realised-subtitle" style="font-size:10px;color:var(--muted)">Cessions · Remboursements · Pertes · Revenus</div>
           </div>
           <div id="ana-realised"></div>
         </div>
@@ -1564,6 +1569,18 @@ textarea
     </div>
   </div>
 </div>
+<div id="liq-modal" onclick="if(event.target===this)closeLiqModal()">
+  <div class="liq-box">
+    <div style="font-size:14px;font-weight:600;margin-bottom:4px">💵 Liquidités — <span id="liq-modal-cat"></span></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Espèces disponibles dans l'enveloppe, non investies.</div>
+    <label class="fl">Montant (€)</label>
+    <input class="fi" id="liq-modal-input" type="number" min="0" step="0.01" style="width:100%" onkeydown="if(event.key==='Enter')saveLiqModal();if(event.key==='Escape')closeLiqModal()">
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeLiqModal()">Annuler</button>
+      <button class="btn btn-green" onclick="saveLiqModal()">Enregistrer</button>
+    </div>
+  </div>
+</div>
 <div id="confirm">
   <div class="confirm-box">
     <div class="ci">⚠️</div>
@@ -2041,18 +2058,20 @@ function computePatrimoineSeries(rangeMonths) {
       if (i.date && i.date > dateStr) continue
       const s = computeStats(i, dateStr)
       const qty = i.resolvedTicker ? qtyAtDate(i, dateStr) : 0
+      // Capital investi = argent apporté net des sommes déjà récupérées (même définition que le tableau de bord)
+      const apport = s.valeur - s.pl
       if (qty > 0 && DB.tickerHistoryCache?.[i.resolvedTicker]) {
         const hist = DB.tickerHistoryCache[i.resolvedTicker].data
         const monthKey = dateStr.slice(0,7) + '-01'
         const price = hist[monthKey] || findNearestPrice(hist, dateStr)
         if (price) {
           valeur     += price * qty
-          capitalNet += Math.max(0, s.capitalNet)
+          capitalNet += apport
           continue
         }
       }
       valeur     += estARendement(s) ? Math.min(s.valeur, Math.max(0, s.capitalNet)) : s.valeur
-      capitalNet += Math.max(0, s.capitalNet)
+      capitalNet += apport
     }
     return { date: dateStr, valeur: Math.round(valeur*100)/100, capitalNet: Math.round(capitalNet*100)/100 }
   })
@@ -3037,19 +3056,20 @@ function liquiditesVisibles() {
   const h = catsMasquees()
   return DB.categories.reduce((s,c) => s + (h.includes(catRacine(c.id)) ? 0 : (Number(c.liquidites)||0)), 0)
 }
+// Argent réellement apporté par l'utilisateur dans une position, net de ce qu'il en a déjà retiré
+// (ventes, remboursements, intérêts, dividendes) : valeur − P&L = apports − sommes reçues.
+// Un dividende ou une plus-value réinvesti ailleurs est reçu ici et apporté là-bas : il s'annule
+// et n'est donc compté qu'une seule fois dans le capital investi global.
+function apportNet(i) { const s = computeStats(i); return s.valeur - s.pl }
 function patrimoine() {
   const inv  = investmentsVisibles()
   const liq  = liquiditesVisibles()
   const brut = inv.reduce((s,i) => s + valeurPatrimoine(i), 0) + liq
   const courus  = inv.reduce((s,i) => s + interetsCourus(i), 0)
-  const capital = inv.reduce((s,i) => s + Math.max(0, computeStats(i).capitalNet), 0) + liq
+  const capital = inv.reduce((s,i) => s + apportNet(i), 0) + liq
   const dettesTot = dettes().reduce((s,d) => s + Number(d.restant||0), 0)
   const masquees  = catsMasquees().map(id => (DB.categories.find(c => c.id === id)||{}).label).filter(Boolean)
   return { brut, courus, liquidites: liq, capital, dettes: dettesTot, net: brut - dettesTot, masquees }
-}
-function noteMasquees() {
-  const m = catsMasquees().map(id => (DB.categories.find(c => c.id === id)||{}).label).filter(Boolean)
-  return m.length ? 'hors ' + m.join(', ') : ''
 }
 
 // Somme des liquidités de toutes les catégories racines
@@ -3653,10 +3673,11 @@ function updatePatrimoineModeBtn() {
 function aggByCat(period) {
   const res = {}
   for (const i of investments()) {
-    if (!res[i.cat]) res[i.cat] = { capitalNet:0, valeur:0, count:0, pl:0 }
+    if (!res[i.cat]) res[i.cat] = { capitalNet:0, apport:0, valeur:0, count:0, pl:0 }
     const s   = computeStats(i)
     const plP = plForPeriod(i, period)
     res[i.cat].capitalNet += s.capitalNet
+    res[i.cat].apport     += s.valeur - s.pl
     res[i.cat].valeur     += valeurPatrimoine(i)
     res[i.cat].count++
     res[i.cat].pl         += plP.canPeriod ? plP.pl : 0
@@ -3671,9 +3692,10 @@ function aggByCat(period) {
       const parent = DB.categories.find(p => p.id === c.parentId)
       rootId = parent?.parentId ? (DB.categories.find(pp => pp.id === parent.parentId)?.id || parent.id) : c.parentId
     }
-    if (!res[rootId]) res[rootId] = { capitalNet:0, valeur:0, count:0, pl:0 }
+    if (!res[rootId]) res[rootId] = { capitalNet:0, apport:0, valeur:0, count:0, pl:0 }
     res[rootId].valeur     += liq
     res[rootId].capitalNet += liq
+    res[rootId].apport     += liq
   })
   return res
 }
@@ -3809,10 +3831,9 @@ function renderDashboard() {
   const _heroHtml = '<div class="kpi-hero" onclick="copyKPI(\''+fmt(displayVal)+'\',\''+(isNet?'Patrimoine net':'Patrimoine brut')+'\')" title="Cliquer pour copier" style="border-top-color:var(--blue)">'
     + '<div style="display:flex;justify-content:space-between;align-items:flex-start">'
     +   '<div><div class="kpi-lbl">'+(isNet?'Patrimoine net':'Patrimoine brut')+'</div>'
-    +     '<div class="kpi-val kpi-anim blur-num" style="color:var(--blue);font-family:\'DM Serif Display\',serif;font-size:40px;line-height:1;letter-spacing:-1.5px">'+fmt(displayVal)+'</div>'
+    +     '<div class="kpi-val kpi-anim blur-num" style="color:var(--blue);font-family:\'DM Serif Display\',serif;font-size:34px;line-height:1;letter-spacing:-1.2px">'+fmt(displayVal)+'</div>'
     +     '<div class="kpi-sub">'+_heroSubHtml+'</div>'
     +     (tA_accrued > 0 ? '<div class="kpi-accrued">+ <span class="blur-num">'+fmt(tA_accrued)+'</span> d’intérêts à recevoir</div>' : '')
-    +     (noteMasquees() ? '<div class="kpi-accrued">'+noteMasquees()+'</div>' : '')
     +   '</div>'
     + '</div></div>'
   const _secKpis = [
@@ -3905,8 +3926,9 @@ function donutLeave() {
 function renderBarChart(agg, visCats) {
   const max = Math.max(...visCats.map(c => agg[c.id]?.valeur||0), 1)
   document.getElementById('bar-chart').innerHTML = visCats.map(c => {
-    const a = agg[c.id] || { capitalNet:0, valeur:0 }
-    return `<div><div class="bar-hdr"><span class="bar-name">${c.icon} ${c.label}</span><span class="bar-vals"><span class="blur-num" style="color:var(--muted)">${fmt(a.capitalNet)}</span><span class="blur-num" style="color:${c.color}">${fmt(a.valeur)}</span></span></div><div class="bar-track"><div class="bar-fill" style="width:${(a.valeur/max*100).toFixed(1)}%;background:${c.color}"></div><div class="bar-fill2" style="width:${(a.capitalNet/max*100).toFixed(1)}%;background:#fff"></div></div></div>`
+    const a = agg[c.id] || { apport:0, valeur:0 }
+    const ap = Math.max(0, a.apport || 0)
+    return `<div><div class="bar-hdr"><span class="bar-name">${c.icon} ${c.label}</span><span class="bar-vals"><span class="blur-num" style="color:var(--muted)" title="Argent apporté, net des sommes déjà récupérées">${fmt(ap)}</span><span class="blur-num" style="color:${c.color}">${fmt(a.valeur)}</span></span></div><div class="bar-track"><div class="bar-fill" style="width:${(a.valeur/max*100).toFixed(1)}%;background:${c.color}"></div><div class="bar-fill2" style="width:${(ap/max*100).toFixed(1)}%;background:#fff"></div></div></div>`
   }).join('')
 }
 function toggleShowArchived() {
@@ -4435,13 +4457,13 @@ function renderInvCards(list) {
             <span class="inv-subgroup-label">${sc.label}</span>
             <div class="inv-subgroup-stats">
               <span class="blur-num" style="color:var(--muted)">${fmt(scTotal,0)}</span>
-              ${scLiq > 0 ? '<span style="font-size:10px;color:var(--muted2)" title="'+fmt(scLiq,0)+' de liquidités">💵 '+fmt(scLiq,0)+'</span>' : ''}
+              ${liqChip(sc, scLiq)}
               <span class="blur-num ${scPlPos?'pos':'neg'}">${scPlPos?'+':''}${fmt(scPl,0)}</span>
               <span style="color:var(--muted2)">${scItems.length}</span>
             </div>
             <span id="${sgid}-arrow" style="font-size:10px;color:var(--muted2);margin-left:4px">▾</span>
           </div>
-          <div class="inv-subgroup-cards" id="${sgid}">${buildInvCardGroup(scItems)}</div>
+          <div class="inv-subgroup-cards" id="${sgid}">${liqCardHtml(sc, scLiq)}${buildInvCardGroup(scItems)}</div>
         </div>`
       }
       if (noSub.length) {
@@ -4451,28 +4473,20 @@ function renderInvCards(list) {
       innerHtml = buildInvCardGroup(items)
     }
 
-    // Liquidités : agréger catégorie racine + sous-catégories
-    // Liquidités : catégorie racine + toutes ses sous-catégories
-    // Liquidités : racine + toutes ses sous-catégories (pour le total affiché dans le header)
+    // Liquidités : racine + toutes ses sous-catégories (total affiché dans l'en-tête)
     const catLiquid    = Number(cat.liquidites) || 0
     const subLiqTotal  = subCats(cat.id).reduce((s,sc) => s + (Number(sc.liquidites)||0), 0)
     const totalValWithLiq = totalVal + catLiquid + subLiqTotal
-
-    // Mini-carte liquidités si > 0
-    const liqBtnId = 'liq-edit-'+gid
-    const liqCard = catLiquid > 0
-      ? '<div class="inv-card" style="opacity:.85">'
-        + '<div class="inv-card-bar" style="background:var(--muted2)"></div>'
-        + '<div class="inv-card-id" style="flex:1;border-right:1px solid var(--border)">'
-        +   '<div class="inv-card-name" style="color:var(--muted)">💵 Liquidités disponibles</div>'
-        +   '<div class="inv-card-meta"><span style="font-size:10px;color:var(--muted2)">Cash non investi · ' + cat.label + '</span></div>'
-        + '</div>'
-        + '<div class="inv-card-vals" style="border-right:none">'
-        +   '<div class="inv-val-lbl" style="margin-bottom:3px">Montant</div>'
-        +   '<div style="font-family:monospace;font-size:16px;font-weight:700;color:var(--muted)" class="blur-num">' + fmt(catLiquid,2) + '</div>'
-        + '</div>'
-        + '</div>'
-      : ''
+    // Sous-groupes affichés : chaque sous-catégorie montre ses propres liquidités.
+    // Sinon, on les montre toutes ici, et la pastille de l'en-tête édite celle qui les détient
+    // (ou l'unique sous-catégorie utilisée, ex. le PEA).
+    const liqHolders = [cat, ...subCats(cat.id)].filter(c => (Number(c.liquidites)||0) > 0)
+    const liqCible   = showSubs ? cat
+      : liqHolders.length === 1 ? liqHolders[0]
+      : (!liqHolders.length && usedSubs.length === 1) ? usedSubs[0] : cat
+    const liqHeader  = showSubs ? catLiquid : catLiquid + subLiqTotal
+    const liqCard    = showSubs ? liqCardHtml(cat, catLiquid)
+      : [cat, ...subCats(cat.id)].map(c => liqCardHtml(c, Number(c.liquidites)||0)).join('')
 
     html += `<div class="inv-group">
       <div class="inv-group-header" onclick="toggleInvGroup('${gid}')">
@@ -4480,13 +4494,13 @@ function renderInvCards(list) {
         <div class="inv-group-name" style="color:${cat.color}">${cat.label}</div>
         <div class="inv-group-stats">
           <span class="inv-group-val blur-num">${fmt(totalValWithLiq,0)}</span>
-          ${catLiquid > 0 ? `<span style="font-size:10px;color:var(--muted2)" title="dont ${fmt(catLiquid,0)} de liquidités">💵 ${fmt(catLiquid,0)}</span>` : ''}
+          ${liqChip(liqCible, liqHeader)}
           <span class="inv-group-pl ${plPos?'pos':'neg'}">${plPos?'+':''}${fmt(totalPl,2)}</span>
           <span class="inv-group-count">${items.length} inv.</span>
         </div>
         <div class="inv-group-toggle" id="${gid}-arrow">▾</div>
       </div>
-      <div class="inv-group-cards" id="${gid}">${catLiquid > 0 ? liqCard : ''}${innerHtml}</div>
+      <div class="inv-group-cards" id="${gid}">${liqCard}${innerHtml}</div>
     </div>`
 
   }
@@ -5986,7 +6000,7 @@ function renderAnaKPIs() {
   // Performance globale, frais inclus : le P&L unique intègre déjà les frais réellement payés
   // (achat, vente, frais courants). Les frais de gestion des fonds (TER) sont déjà dans leur cours.
   const plNet   = inv.reduce((s,i) => s + computeStats(i).pl, 0)
-  const apports = inv.reduce((s,i) => s + (computeStats(i).investi || 0), 0)
+  const apports = patrimoine().capital
   const rdtNet  = apports > 0 ? (plNet/apports*100) : null
   el.innerHTML = `<div class="ana-kpi-grid">
     <div class="ana-kpi"><div class="ana-kpi-val" style="color:${triMoy!==null?(triMoy>=0?'var(--green)':'var(--red)'):'var(--muted)'}">${triMoy!==null?((triMoy>=0?'+':'')+triMoy.toFixed(1)+'%'):'—'}</div><div class="ana-kpi-lbl">TRI moyen</div></div>
@@ -6009,8 +6023,9 @@ function renderAnaKPIBand() {
   const el = document.getElementById('ana-kpi-band')
   if (!el) return
   const inv = investmentsVisibles()
-  const tI  = inv.reduce((s,i) => s+computeStats(i).capitalNet, 0) + liquiditesVisibles()
-  const tA  = inv.reduce((s,i) => s+valeurPatrimoine(i), 0) + liquiditesVisibles()
+  const _P  = patrimoine()
+  const tI  = _P.capital
+  const tA  = _P.brut
   const pvTotal = inv.reduce((s,i) => { const p=plForPeriod(i,anaPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
   const pctGlob = tI > 0 ? (pvTotal/tI*100) : 0
   const nCours = inv.filter(i=>i.statut==='En cours').length
@@ -6182,24 +6197,26 @@ function renderAnaRealised() {
   if (!el) return
   const inv = investmentsVisibles()
 
-  // ── Construire les lignes : cessions + revenus (dividendes + intérêts) par position
+  // ── Construire les lignes : cessions, remboursements de capital, revenus par position
   const rows = []
   inv.forEach(i => {
     const mvts   = getMvts(i.id)
     const ventes = mvts.filter(m => m.type === 'vente')
-    const revenus = mvts.filter(m => m.type === 'interets' || m.type === 'dividende')
+    const revenus = mvts.filter(m => m.type === 'interets' || m.type === 'dividende' || m.type === 'bonus')
     const pertes  = mvts.filter(m => m.type === 'perte')
-    if (!ventes.length && !revenus.length && !pertes.length) return
+    const retraits = mvts.filter(m => m.type === 'retrait').sort((a,b) => a.date.localeCompare(b.date))
+    if (!ventes.length && !revenus.length && !pertes.length && !retraits.length) return
 
     const s           = computeStats(i)
     const cat         = getCat(i.cat)
     const plCession   = s.plRealise || 0
     const totalVendu  = ventes.reduce((s,m)  => s + Number(m.montant), 0)
     const totalRevenu = revenus.reduce((s,m) => s + Number(m.montant), 0)
-    const totalEncaisse = totalVendu + totalRevenu
+    const totalRetire = retraits.reduce((s,m) => s + Number(m.montant), 0)   // capital récupéré (ce n'est pas un gain)
+    const totalEncaisse = totalVendu + totalRevenu + totalRetire
     const totalGain     = plCession + totalRevenu  // gain net total
 
-    rows.push({ i, cat, totalVendu, totalRevenu, plCession, totalEncaisse, totalGain, statut: i.statut })
+    rows.push({ i, cat, totalVendu, totalRevenu, totalRetire, retraits, plCession, totalEncaisse, totalGain, statut: i.statut })
   })
 
   const card = document.getElementById('ana-realised-card')
@@ -6210,7 +6227,7 @@ function renderAnaRealised() {
   }
   if (card) card.style.display = ''
 
-  rows.sort((a,b) => Math.abs(b.totalGain) - Math.abs(a.totalGain))   // les plus gros montants d'abord, gains comme pertes
+  rows.sort((a,b) => Math.abs(b.totalGain) - Math.abs(a.totalGain) || b.totalRetire - a.totalRetire)   // les plus gros montants d'abord, gains comme pertes
 
   const totalGainAll   = rows.reduce((s,r) => s + r.totalGain,   0)
   const totalEncAll    = rows.reduce((s,r) => s + r.totalEncaisse, 0)
@@ -6223,7 +6240,7 @@ function renderAnaRealised() {
     + [
         { l:'Total encaissé', v: fmt(totalEncAll,0),                         c:'var(--text)' },
         { l:'Cessions & pertes', v:(totalCessions>=0?'+':'')+fmt(totalCessions,0), c:totalCessions>=0?'var(--green)':'var(--red)' },
-        { l:'Dividendes & intérêts', v:'+'+fmt(totalDivInt,0),               c:'var(--gold)' },
+        { l:'Dividendes, intérêts & bonus', v:'+'+fmt(totalDivInt,0),        c:'var(--gold)' },
         { l:'Total Return net', v:(totalGainAll>=0?'+':'')+fmt(totalGainAll,0), c:col },
       ].map(k =>
         '<div style="background:var(--bg2);border-radius:var(--radius-sm);padding:8px 10px">'
@@ -6242,8 +6259,8 @@ function renderAnaRealised() {
 
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr>'
-    + ['Position','Titres vendus','PRU','Prix vente','Cession / perte','Div / Int','Total Return'].map((h,j) =>
-        '<th'+(j===3?' title="Plusieurs ventes : moyenne pondérée par le nombre de titres"':'')+' style="text-align:'+(j===0?'left':'right')+';padding:4px 8px;font-size:10px;'
+    + ['Position','Titres vendus','PRU','Prix vente','Capital récupéré','Cession / perte','Revenus','Total Return'].map((h,j) =>
+        '<th'+(j===3?' title="Plusieurs ventes : moyenne pondérée par le nombre de titres"':j===4?' title="Retraits et remboursements de capital : de l’argent qui vous revient, pas un gain"':j===6?' title="Dividendes, intérêts et bonus"':'')+' style="text-align:'+(j===0?'left':'right')+';padding:4px 8px;font-size:10px;'
         +'font-weight:500;color:var(--muted);border-bottom:1px solid var(--border)">'+h+'</th>'
       ).join('')
     + '</tr></thead><tbody>'
@@ -6268,9 +6285,9 @@ function renderAnaRealised() {
         const ouvert  = multi && openIds.includes(r.i.id)
         const nomCell = multi
           ? '<span style="cursor:pointer" onclick="toggleRealisedDetail(\''+r.i.id+'\')">'
-            + '<span style="color:'+r.cat.color+'">'+r.cat.icon+'</span> '+r.i.nom
+            + '<span style="color:'+r.cat.color+'">'+r.cat.icon+'</span> '+esc(r.i.nom)
             + ' <span style="font-size:10px;color:var(--blue)">'+(ouvert?'▾':'▸')+' '+vd.length+' ventes</span></span>'
-          : '<span style="color:'+r.cat.color+'">'+r.cat.icon+'</span> '+r.i.nom
+          : '<span style="color:'+r.cat.color+'">'+r.cat.icon+'</span> '+esc(r.i.nom)
         const fmtQ = q => (Math.round(q*1000)/1000).toLocaleString('fr-FR')
         const detail = ouvert ? vd.map(v =>
           '<tr style="border-bottom:1px solid var(--border);background:var(--bg2);font-size:11px">'
@@ -6278,8 +6295,9 @@ function renderAnaRealised() {
           + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:var(--muted)">'+(v.quantite?fmtQ(v.quantite):'—')+'</td>'
           + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:var(--muted)">'+(v.pru!==null?fmt(v.pru,2):'—')+'</td>'
           + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:var(--muted)">'+(v.prixVente!==null?fmt(v.prixVente,2):'—')+'</td>'
+          + '<td></td>'
           + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:'+(v.gain>0?'var(--green)':v.gain<0?'var(--red)':'var(--muted2)')+'">'+(v.gain!==null?(v.gain>0?'+':'')+fmt(v.gain,2):'—')+'</td>'
-          + '<td></td><td></td></tr>'
+          + '<td></td><td></td><td></td></tr>'
         ).join('') : ''
         return '<tr style="border-bottom:1px solid var(--border)">'
           + '<td style="padding:8px">'+nomCell+'</td>'
@@ -6289,6 +6307,9 @@ function renderAnaRealised() {
             + (pruMoyen !== null ? fmt(pruMoyen,2) : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:'+deltaColor+'">'
             + (pxMoyen !== null ? fmt(pxMoyen,2) : '—') + '</td>'
+          + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:'+(r.totalRetire > 0 ? 'var(--text)' : 'var(--muted2)')+'"'
+            + (r.retraits.length ? ' title="'+r.retraits.map(m => fmtDate(m.date)+' : '+fmt(Number(m.montant),2)).join('&#10;')+'"' : '') + '>'
+            + (r.totalRetire > 0 ? fmt(r.totalRetire,0) + (r.retraits.length > 1 ? ' <span style="font-size:10px;color:var(--muted)">('+r.retraits.length+')</span>' : '') : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:'+cCol+'">'
             + (r.plCession !== 0 ? (r.plCession>0?'+':'')+fmt(r.plCession,0) : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:var(--gold)">'
@@ -6699,7 +6720,7 @@ function renderAide() {
       block('Tableau de bord KPIs',
         table(['KPI','Description'],
           [['Valeur totale','Somme de tous les actifs + liquidités'],
-           ['Capital investi','Somme des montants investis nets'],
+           ['Capital investi','Argent apporté de votre poche, net des sommes déjà récupérées. Un dividende, des intérêts ou une vente réinvestis ailleurs ne sont comptés qu’une fois.'],
            ['P&L latent','Gains/pertes non réalisés sur positions encore ouvertes'],
            ['Gains réalisés','Total des gains de cession + dividendes + intérêts perçus'],
            ['Revenus/mois','Moyenne mensuelle des revenus passifs sur 12 mois'],
@@ -7237,6 +7258,49 @@ function askDelete(id) {
     }
   )
 }
+// ── Liquidités : modifiables directement depuis le portefeuille
+let liqModalCatId = null
+function openLiqModal(catId, ev) {
+  if (ev) ev.stopPropagation()
+  const c = DB.categories.find(x => x.id === catId); if (!c) return
+  liqModalCatId = catId
+  document.getElementById('liq-modal-cat').textContent = c.label
+  const inp = document.getElementById('liq-modal-input')
+  inp.value = Number(c.liquidites) ? Number(c.liquidites) : ''
+  document.getElementById('liq-modal').classList.add('open')
+  setTimeout(() => { inp.focus(); inp.select() }, 30)
+}
+function closeLiqModal() { document.getElementById('liq-modal').classList.remove('open'); liqModalCatId = null }
+function saveLiqModal() {
+  const c = DB.categories.find(x => x.id === liqModalCatId); if (!c) return closeLiqModal()
+  const raw = document.getElementById('liq-modal-input').value.replace(',', '.').trim()
+  const v = raw === '' ? 0 : parseFloat(raw)
+  if (isNaN(v) || v < 0) { toast('Montant invalide', 'var(--red)'); return }
+  c.liquidites = v > 0 ? Math.round(v * 100) / 100 : undefined
+  persist(); closeLiqModal(); refreshCurrentPage()
+  toast('Liquidités ' + c.label + ' : ' + fmt(v, 2))
+}
+function liqCardHtml(c, montant) {
+  if (!(montant > 0)) return ''
+  return '<div class="inv-card" style="opacity:.85">'
+    + '<div class="inv-card-bar" style="background:var(--muted2)"></div>'
+    + '<div class="inv-card-id" style="flex:1;border-right:1px solid var(--border)">'
+    +   '<div class="inv-card-name" style="color:var(--muted)">💵 Liquidités disponibles</div>'
+    +   '<div class="inv-card-meta"><span style="font-size:10px;color:var(--muted2)">Cash non investi · ' + esc(c.label) + '</span></div>'
+    + '</div>'
+    + '<div class="inv-card-vals" style="border-right:none">'
+    +   '<div class="inv-val-lbl" style="margin-bottom:3px">Montant</div>'
+    +   '<div style="font-family:monospace;font-size:16px;font-weight:700;color:var(--muted)" class="blur-num">' + fmt(montant,2) + '</div>'
+    + '</div>'
+    + '<div style="display:flex;align-items:center;padding:0 12px"><button class="btn btn-ghost btn-sm" onclick="openLiqModal(\''+c.id+'\',event)">✏️ Modifier</button></div>'
+    + '</div>'
+}
+function liqChip(c, montant) {
+  return montant > 0
+    ? '<span class="liq-chip blur-num" title="Liquidités : cliquer pour modifier" onclick="openLiqModal(\''+c.id+'\',event)">💵 '+fmt(montant,0)+'</span>'
+    : '<span class="liq-chip" title="Ajouter des liquidités" onclick="openLiqModal(\''+c.id+'\',event)">💵 +</span>'
+}
+
 function showConfirm(title,msg,cb) {
   document.getElementById('confirm-title').textContent=title
   document.getElementById('confirm-msg').textContent=msg

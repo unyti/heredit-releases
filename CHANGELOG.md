@@ -1,5 +1,23 @@
 # CHANGELOG — Heredit
 
+## v3.14.47 — 2026-09-30
+
+### Capital investi : l'argent réellement apporté
+- **Plus de double comptage des réinvestissements** : le capital investi global est désormais l'argent sorti de votre poche, net des sommes déjà récupérées (valeur − P&L). Un dividende, des intérêts ou le produit d'une vente réinvestis ailleurs ne sont comptés qu'une fois (ex. dividende de 100 € de Total réinvesti dans Kalray : 1 000 € investis, et non 1 100 €). Les intérêts capitalisés d'un livret ne sont pas du capital apporté.
+- Même définition pour le tableau de bord, la bande d'indicateurs d'Analyses, la « Performance (frais inclus) », la barre « Capital investi vs valeur actuelle » et la courbe d'évolution (et donc la comparaison CAC 40 / S&P 500).
+
+### Portefeuille
+- **Liquidités modifiables sur place** : pastille « 💵 » dans l'en-tête de chaque catégorie (« 💵 + » pour en ajouter) et bouton « Modifier » sur la carte Liquidités. Plus besoin de passer par Paramètres. Les liquidités d'une sous-catégorie (ex. PEA) sont aussi affichées quand elle est seule dans sa catégorie.
+
+### Analyses › Gains & pertes réalisés
+- **Colonne « Capital récupéré »** : retraits et remboursements de capital (ex. crowdfunding remboursé en partie), avec le détail des dates au survol. Ils entrent dans le « Total encaissé » mais pas dans les gains.
+- Colonne « Revenus » : dividendes, intérêts et bonus.
+
+### Tableau de bord
+- Mention « hors Immobilier » retirée ; indicateurs plus compacts.
+
+---
+
 ## v3.14.46 — 2026-09-30
 
 ### Finitions
