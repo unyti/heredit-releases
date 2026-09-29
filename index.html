@@ -2829,6 +2829,14 @@ function computeStats(inv, asOf) {
   const useAccrual = hasRend && !hasRevenusMvts  // mode accrual pur (aucun paiement manuel)
 
   let capitalEngageVentes = 0   // capital sorti via ventes (pour plRealise)
+  // Frais saisis le jour d'une vente = frais de VENTE : déduits de la plus-value, pas ajoutés au capital
+  const _datesVente = new Set(mvts.filter(m => m.type === 'vente').map(m => m.date))
+  const _datesAchat = new Set(mvts.filter(m => m.type === 'achat').map(m => m.date))
+  const fraisVente  = {}
+  mvts.forEach(m => {
+    if (m.type === 'fraisachat' && _datesVente.has(m.date) && !_datesAchat.has(m.date))
+      fraisVente[m.date] = (fraisVente[m.date] || 0) + (Number(m.montant) || 0)
+  })
   let recettesVentes      = 0   // montant total encaissé via ventes
   const ventesDetail      = []  // détail par vente : date, prixVente, PRU, gain
 
@@ -2858,6 +2866,7 @@ function computeStats(inv, asOf) {
       if (ev.nouvelleEcheance)    echeanceCourante = ev.nouvelleEcheance
     } else {
       const cfg = MVT_TYPES[ev.type] || { sign:+1, capital:false }
+      let coutVente = 0
       if (ev.type === 'vente') {
         // PV réalisée : prix vente - coût achat PRU
         recettesVentes += ev.montant
@@ -2867,11 +2876,15 @@ function computeStats(inv, asOf) {
         let   pruAuMoment = null
         if (qteVendue > 0 && qteTotale > 0 && capitalNet > 0) {
           pruAuMoment = Math.round((capitalNet / qteTotale) * 100) / 100
-          capitalEngageVentes += Math.round(pruAuMoment * qteVendue * 100) / 100
+          // Coût de revient des titres vendus (au prorata exact : évite les écarts d'arrondi)
+          coutVente = Math.round(capitalNet * Math.min(1, qteVendue / qteTotale) * 100) / 100
         } else {
           const frac = solde > 0 ? Math.min(1, ev.montant / solde) : 1
-          capitalEngageVentes += Math.max(0, capitalNet * frac)
+          coutVente = Math.max(0, capitalNet * frac)
         }
+        const fraisDeVente = fraisVente[ev.date] || 0
+        delete fraisVente[ev.date]   // appliqué une seule fois si plusieurs ventes le même jour
+        capitalEngageVentes += coutVente + fraisDeVente
         const pxVente = ev.prixUnitaire || (qteVendue > 0 ? Math.round(ev.montant/qteVendue*100)/100 : null)
         ventesDetail.push({
           date:      ev.date,
@@ -2879,13 +2892,20 @@ function computeStats(inv, asOf) {
           quantite:  qteVendue,
           prixVente: pxVente,
           pru:       pruAuMoment,
+          frais:     fraisDeVente,
           gain:      pruAuMoment !== null && qteVendue > 0
-                       ? Math.round((ev.montant - pruAuMoment * qteVendue) * 100) / 100
+                       ? Math.round((ev.montant - coutVente - fraisDeVente) * 100) / 100
                        : null
         })
       }
       solde += cfg.sign * ev.montant
-      if (cfg.capital) {
+      if (ev.type === 'vente') {
+        // Une vente retire du capital le COÛT DE REVIENT des titres vendus, pas le prix de vente :
+        // sinon le PRU des ventes suivantes et le P&L des positions partiellement vendues sont faussés.
+        capitalNet -= coutVente
+      } else if (ev.type === 'fraisachat' && _datesVente.has(ev.date) && !_datesAchat.has(ev.date)) {
+        // frais de vente : déjà déduits de la plus-value de la vente du jour
+      } else if (cfg.capital) {
         // fraisachat : sign=-1 sur le solde (réduit la trésorerie) MAIS augmente le capitalNet (coût de revient)
         capitalNet += (ev.type === 'fraisachat') ? ev.montant : cfg.sign * ev.montant
       }
@@ -2905,7 +2925,7 @@ function computeStats(inv, asOf) {
   if (!asOf && inv.ticker && inv.quantite > 0 && inv.prixUnitaire > 0) {
     const liveVal = Math.round(inv.prixUnitaire * inv.quantite * 100) / 100
     const cn = Math.max(0, capitalNet)
-    const plRealLive = Math.round((recettesVentes - capitalEngageVentes)*100)/100; return { valeur: liveVal, capitalNet: cn, pl: liveVal - cn + revenus, plRealise: plRealLive, revenus, mode, mvtCount: mvts.length, isLive: true }
+    const plRealLive = Math.round((recettesVentes - capitalEngageVentes)*100)/100; return { valeur: liveVal, capitalNet: cn, pl: liveVal - cn + revenus, plRealise: plRealLive, revenus, ventesDetail, mode, mvtCount: mvts.length, isLive: true }
   }
 
   // Projection à l'échéance pour les placements à rendement fixe
@@ -6066,12 +6086,13 @@ function renderAnaRealised() {
   const LIMIT = 5
   const showAll = el.dataset.showAll === '1'
   const displayed = showAll ? rows : rows.slice(0, LIMIT)
+  const openIds   = (el.dataset.open || '').split(',').filter(Boolean)
   const hidden    = rows.length - LIMIT
 
   html += '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr>'
-    + ['Position','PRU','Prix vente','Cession','Div / Int','Total Return'].map((h,j) =>
-        '<th style="text-align:'+(j===0?'left':'right')+';padding:4px 8px;font-size:10px;'
+    + ['Position','Titres vendus','PRU','Prix vente','Cession','Div / Int','Total Return'].map((h,j) =>
+        '<th'+(j===3?' title="Plusieurs ventes : moyenne pondérée par le nombre de titres"':'')+' style="text-align:'+(j===0?'left':'right')+';padding:4px 8px;font-size:10px;'
         +'font-weight:500;color:var(--muted);border-bottom:1px solid var(--border)">'+h+'</th>'
       ).join('')
     + '</tr></thead><tbody>'
@@ -6091,8 +6112,28 @@ function renderAnaRealised() {
         // Delta PRU → prix vente
         const deltaColor = pxMoyen && pruMoyen
           ? (pxMoyen >= pruMoyen ? 'var(--green)' : 'var(--red)') : 'var(--muted2)'
+        const qteVendue = vd.reduce((s,v) => s + (Number(v.quantite)||0), 0)
+        const multi   = vd.length > 1
+        const ouvert  = multi && openIds.includes(r.i.id)
+        const nomCell = multi
+          ? '<span style="cursor:pointer" onclick="toggleRealisedDetail(\''+r.i.id+'\')">'
+            + '<span style="color:'+r.cat.color+'">'+r.cat.icon+'</span> '+r.i.nom
+            + ' <span style="font-size:10px;color:var(--blue)">'+(ouvert?'▾':'▸')+' '+vd.length+' ventes</span></span>'
+          : '<span style="color:'+r.cat.color+'">'+r.cat.icon+'</span> '+r.i.nom
+        const fmtQ = q => (Math.round(q*1000)/1000).toLocaleString('fr-FR')
+        const detail = ouvert ? vd.map(v =>
+          '<tr style="border-bottom:1px solid var(--border);background:var(--bg2);font-size:11px">'
+          + '<td style="padding:5px 8px 5px 28px;color:var(--muted)">'+fmtDate(v.date)+'</td>'
+          + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:var(--muted)">'+(v.quantite?fmtQ(v.quantite):'—')+'</td>'
+          + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:var(--muted)">'+(v.pru!==null?fmt(v.pru,2):'—')+'</td>'
+          + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:var(--muted)">'+(v.prixVente!==null?fmt(v.prixVente,2):'—')+'</td>'
+          + '<td class="blur-num" style="text-align:right;padding:5px 8px;font-family:monospace;color:'+(v.gain>0?'var(--green)':v.gain<0?'var(--red)':'var(--muted2)')+'">'+(v.gain!==null?(v.gain>0?'+':'')+fmt(v.gain,2):'—')+'</td>'
+          + '<td></td><td></td></tr>'
+        ).join('') : ''
         return '<tr style="border-bottom:1px solid var(--border)">'
-          + '<td style="padding:8px"><span style="color:'+r.cat.color+'">'+r.cat.icon+'</span> '+r.i.nom+'</td>'
+          + '<td style="padding:8px">'+nomCell+'</td>'
+          + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:var(--muted)">'
+            + (qteVendue > 0 ? fmtQ(qteVendue) : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:var(--muted)">'
             + (pruMoyen !== null ? fmt(pruMoyen,2) : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;color:'+deltaColor+'">'
@@ -6103,7 +6144,7 @@ function renderAnaRealised() {
             + (r.totalRevenu > 0 ? '+'+fmt(r.totalRevenu,0) : '—') + '</td>'
           + '<td class="blur-num" style="text-align:right;padding:8px;font-family:monospace;font-weight:700;color:'+tCol+'">'
             + (r.totalGain>=0?'+':'')+fmt(r.totalGain,0) + '</td>'
-          + '</tr>'
+          + '</tr>' + detail
       }).join('')
     + '</tbody></table>'
 
@@ -6116,6 +6157,14 @@ function renderAnaRealised() {
   }
 
   el.innerHTML = html
+}
+
+function toggleRealisedDetail(id) {
+  const el = document.getElementById('ana-realised')
+  if (!el) return
+  const ids = (el.dataset.open || '').split(',').filter(Boolean)
+  el.dataset.open = (ids.includes(id) ? ids.filter(x => x !== id) : ids.concat(id)).join(',')
+  renderAnaRealised()
 }
 
 function toggleRealisedRows() {

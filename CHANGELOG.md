@@ -1,5 +1,18 @@
 # CHANGELOG — Heredit
 
+## v3.14.40 — 2026-09-29
+
+### Analyses › Gains & pertes réalisés
+- **Colonne « Titres vendus »** : nombre total de titres cédés par position.
+- **Détail vente par vente** : une position vendue en plusieurs fois affiche « ▸ N ventes » ; un clic déplie chaque vente (date, titres, PRU, prix de vente, plus-value). La ligne principale montre le prix de vente moyen pondéré par le nombre de titres.
+
+### Corrections de calcul
+- **Ventes multiples ou partielles** : une vente retirait du capital le prix de vente au lieu du coût de revient des titres vendus. Le PRU des ventes suivantes était faux et la plus-value surestimée (ex. 18 titres achetés 60 €, vendus 10 à 70 € puis 8 à 80 € : 360 € affichés au lieu de 260 €). Le P&L des positions partiellement vendues comptait aussi la plus-value deux fois.
+- **Frais de vente** : les frais saisis le jour d'une vente sont maintenant déduits de la plus-value de cette vente (ils restaient sinon comptés comme du capital). Ex. Totalenergies : +369,85 € net de 7,05 € de frais.
+- Le détail des ventes est aussi transmis pour les positions encore détenues avec cours en direct.
+
+---
+
 ## v3.14.39 — 2026-09-29
 
 ### Corrections — Analyses › Gains & pertes réalisés
