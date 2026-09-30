@@ -3096,6 +3096,13 @@ function plDecomposeHtml(d) {
   return '<span style="color:'+(d.valeur>=0?'var(--green)':'var(--red)')+'">'+sg(d.valeur)+fmt(d.valeur)+'</span> plus-values'
     + ' \u00b7 <span style="color:var(--gold)">'+sg(d.revenus)+fmt(d.revenus)+'</span> div. & int.'
 }
+function plSplitLignes(d) {
+  if (!d.revenus) return ''
+  const sg = v => (v >= 0 ? '+' : '')
+  return '<div style="font-size:10px;color:var(--muted2);margin-top:2px;white-space:nowrap">'
+    + '<span class="blur-num" style="color:'+(d.valeur>=0?'var(--green)':'var(--red)')+'">'+sg(d.valeur)+fmt(d.valeur,0)+'</span> plus-values · '
+    + '<span class="blur-num" style="color:var(--gold)">'+sg(d.revenus)+fmt(d.revenus,0)+'</span> div./int.</div>'
+}
 function plDecomposeTitle(d) {
   const sg = v => (v >= 0 ? '+' : '')
   return 'Plus-values (cours, ventes, intérêts courus, frais déduits) : ' + sg(d.valeur) + fmt(d.valeur,2)
@@ -3908,7 +3915,8 @@ function renderDashboard() {
   document.getElementById('cat-mini-grid').innerHTML = visCats.map(c => {
     const a = agg[c.id] || { capitalNet:0, valeur:0, pl:0 }
     const d = a.pl
-    return `<div class="cat-mini" onclick="filterByCat('${c.id}')" style="border-left-color:${c.color}"><div class="cm-icon">${c.icon}</div><div class="cm-body"><div class="cm-name">${c.label}</div><div class="cm-val blur-num" style="color:${c.color}">${fmt(a.valeur)}</div><div class="cm-delta blur-num" style="color:${d>=0?'var(--green)':'var(--red)'}">${d>=0?'+':''}${fmt(d)} P&L</div></div></div>`
+    const dC = plDecompose(visInv.filter(i => i.cat === c.id), dashPeriod)
+    return `<div class="cat-mini" onclick="filterByCat('${c.id}')" style="border-left-color:${c.color}" title="${c.label}&#10;${plDecomposeTitle(dC)}"><div class="cm-icon">${c.icon}</div><div class="cm-body"><div class="cm-name">${c.label}</div><div class="cm-val blur-num" style="color:${c.color}">${fmt(a.valeur)}</div><div class="cm-delta blur-num" style="color:${d>=0?'var(--green)':'var(--red)'}">${d>=0?'+':''}${fmt(d)} P&L</div></div></div>`
   }).join('')
   layoutCatGrid()
 
@@ -4125,7 +4133,7 @@ function renderInv() {
     const capitalCell = pruStr
       ? fmt(s.capitalNet) + '<br><small style="color:var(--muted);font-size:10px">PRU ' + pruStr + '</small>'
       : fmt(s.capitalNet)
-    return `<tr><td><div class="td-name">${i.nom}</div>${i.notes?`<div class="td-sub">${i.notes}</div>`:''}</td><td class="mono blur-num">${capitalCell}</td><td class="mono blur-num">${fmt(s.valeur,2)}${modeTag(i)}</td><td class="mono blur-num ${p.canPeriod?(p.pl>=0?'pos':'neg'):''}">${p.canPeriod?(p.pl>=0?'+':'')+' '+fmt(p.pl,2):'—'}<br><small>${p.canPeriod?p.pct:'—'}</small></td><td class="mono col-tri" style="color:${(()=>{const t=computeTRI(i);return t===null?'var(--muted)':t>=0?'var(--green)':'var(--red)'})()}">${fmtTRI(computeTRI(i))}</td><td class="mono col-rend" style="color:var(--gold)">${i.rendement?i.rendement+'%':'—'}</td><td class="col-frais" style="font-size:11px">${fraisInfo}</td><td style="font-size:12px;color:var(--muted)">${fmtDate(i.date)}${duree?`<br><span style="color:var(--muted2)">${duree}</span>`:''}</td><td class="col-ech" style="font-size:12px">${ech}</td><td>${sbadge(i.statut)}</td><td><div class="td-acts"><button class="btn btn-ghost btn-xs" style="gap:3px;white-space:nowrap" onclick="openMvt('${i.id}')">
+    return `<tr><td><div class="td-name">${i.nom}</div>${i.notes?`<div class="td-sub">${i.notes}</div>`:''}</td><td class="mono blur-num">${capitalCell}</td><td class="mono blur-num">${fmt(s.valeur,2)}${modeTag(i)}</td><td class="mono blur-num ${p.canPeriod?(p.pl>=0?'pos':'neg'):''}" title="${plDecomposeTitle(plDecompose([i], invPeriod))}">${p.canPeriod?(p.pl>=0?'+':'')+fmt(p.pl,2):'—'}<br><small>${p.canPeriod?p.pct:'—'}</small>${(()=>{const d=plDecompose([i], invPeriod);return p.canPeriod&&d.revenus?'<br><small style="color:var(--gold)">dont '+(d.revenus>=0?'+':'')+fmt(d.revenus,0)+' div.</small>':''})()}</td><td class="mono col-tri" style="color:${(()=>{const t=computeTRI(i);return t===null?'var(--muted)':t>=0?'var(--green)':'var(--red)'})()}">${fmtTRI(computeTRI(i))}</td><td class="mono col-rend" style="color:var(--gold)">${i.rendement?i.rendement+'%':'—'}</td><td class="col-frais" style="font-size:11px">${fraisInfo}</td><td style="font-size:12px;color:var(--muted)">${fmtDate(i.date)}${duree?`<br><span style="color:var(--muted2)">${duree}</span>`:''}</td><td class="col-ech" style="font-size:12px">${ech}</td><td>${sbadge(i.statut)}</td><td><div class="td-acts"><button class="btn btn-ghost btn-xs" style="gap:3px;white-space:nowrap" onclick="openMvt('${i.id}')">
 ${mc?`<span class="tag tag-mvt" style="margin:0">${mc}</span>`:''} Mvts
 </button><button class="btn btn-ghost btn-icon btn-xs" onclick="openEdit('${i.id}')">✏️</button><button class="btn btn-danger btn-icon btn-xs" onclick="askDelete('${i.id}')">🗑</button></div></td></tr>`
   }).join('')
@@ -4506,7 +4514,7 @@ function renderInvCards(list) {
             <div class="inv-subgroup-stats">
               <span class="blur-num" style="color:var(--muted)">${fmt(scTotal,0)}</span>
               ${liqChip(sc, scLiq)}
-              <span class="blur-num ${scPlPos?'pos':'neg'}">${scPlPos?'+':''}${fmt(scPl,0)}</span>
+              <span class="blur-num ${scPlPos?'pos':'neg'}" title="${plDecomposeTitle(plDecompose(scItems, invPeriod))}">${scPlPos?'+':''}${fmt(scPl,0)}</span>
               <span style="color:var(--muted2)">${scItems.length}</span>
             </div>
             <span id="${sgid}-arrow" style="font-size:10px;color:var(--muted2);margin-left:4px">▾</span>
@@ -4543,7 +4551,7 @@ function renderInvCards(list) {
         <div class="inv-group-stats">
           <span class="inv-group-val blur-num">${fmt(totalValWithLiq,0)}</span>
           ${liqChip(liqCible, liqHeader)}
-          <span class="inv-group-pl ${plPos?'pos':'neg'}">${plPos?'+':''}${fmt(totalPl,2)}</span>
+          <span class="inv-group-pl ${plPos?'pos':'neg'}" title="${plDecomposeTitle(plDecompose(items, invPeriod))}">${plPos?'+':''}${fmt(totalPl,2)}</span>
           <span class="inv-group-count">${items.length} inv.</span>
         </div>
         <div class="inv-group-toggle" id="${gid}-arrow">▾</div>
@@ -4771,11 +4779,9 @@ function buildInvCardGroup(list) {
           const plCapCol  = plCapPos ? 'var(--green)' : 'var(--red)'
           const plCapVal  = (plCapPos?'+':'')+fmt(plCap,2)
           const plCapPct  = pctOf(plCap, sTotal.investi || sTotal.capitalNet)
-          const rev       = sTotal.revenus || 0
-          const revHtml   = rev > 0
-            ? '<div style="font-size:10px;color:var(--muted2);margin-top:2px">dont <span class="blur-num" style="color:var(--gold)">'+fmt(rev,2)+'</span> div./int.</div>'
-            : ''
-          return '<div class="inv-card-pl">'
+          const decT      = plDecompose([i], 'total')
+          const revHtml   = plSplitLignes(decT)
+          return '<div class="inv-card-pl" title="'+plDecomposeTitle(decT)+'">'
             + '<div class="inv-pl-lbl">P&L total</div>'
             + '<div class="inv-pl-val blur-num" style="color:'+plCapCol+'">'+plCapVal+'</div>'
             + '<div class="inv-pl-pct '+(plCapPos?'pos':'neg')+'">'+plCapPct+'</div>'
@@ -4787,8 +4793,11 @@ function buildInvCardGroup(list) {
           const sTotal2   = computeStats(i)
           const plTot     = Math.round(sTotal2.pl * 100) / 100
           const plTotPos  = plTot >= 0
+          const decT      = plDecompose([i], 'total')
+          const decP      = plDecompose([i], invPeriod)
           const totHtml   = '<div style="font-size:10px;color:var(--muted2);margin-top:2px">Total : <span class="blur-num" style="color:'+(plTotPos?'var(--green)':'var(--red)')+'">'+((plTotPos?'+':'')+fmt(plTot,2))+'</span></div>'
-          return '<div class="inv-card-pl">'
+            + plSplitLignes(decT)
+          return '<div class="inv-card-pl" title="'+(p.canPeriod ? 'P&L '+periodLabel+'&#10;'+plDecomposeTitle(decP)+'&#10;&#10;' : '')+'P&L total&#10;'+plDecomposeTitle(decT)+'">'
             + '<div class="inv-pl-lbl">P&L '+periodLabel+'</div>'
             + '<div class="inv-pl-val blur-num" style="color:'+plColor+'">'+plVal+'</div>'
             + '<div class="inv-pl-pct '+(p.canPeriod?(plPos?'pos':'neg'):'')+'">'+  (p.canPeriod?(p.pct||'—'):'—')+'</div>'
@@ -5154,7 +5163,8 @@ function renderMvtPanel() {
   const kpisHtml = '<div class="mvt-kpis">'
     + '<div class="mvt-kpi"><div class="mvt-kpi-lbl">Capital</div><div class="mvt-kpi-val blur-num">'+fmt(s.capitalNet,0)+'</div><div class="mvt-kpi-sub">'+kpiSub+'</div></div>'
     + '<div class="mvt-kpi"><div class="mvt-kpi-lbl">Valeur actuelle</div><div class="mvt-kpi-val blur-num" style="color:var(--blue)">'+fmt(s.valeur,2)+'</div>'+echSub+'</div>'
-    + '<div class="mvt-kpi"><div class="mvt-kpi-lbl">P&amp;L</div><div class="mvt-kpi-val blur-num" style="color:'+plColor+'">'+(plVal>=0?'+':'')+fmt(plVal,2)+'</div><div class="mvt-kpi-sub" style="color:'+plColor+'">'+(plVal>=0?'+':'')+plPct+'</div></div>'
+    + (()=>{ const d = plDecompose([inv], 'total')
+        return '<div class="mvt-kpi" title="'+plDecomposeTitle(d)+'"><div class="mvt-kpi-lbl">P&amp;L</div><div class="mvt-kpi-val blur-num" style="color:'+plColor+'">'+(plVal>=0?'+':'')+fmt(plVal,2)+'</div><div class="mvt-kpi-sub" style="color:'+plColor+'">'+(plVal>=0?'+':'')+plPct+'</div>'+plSplitLignes(d)+'</div>' })()
     + '</div>'
 
   const fraisAchatMontant = Number(inv.fraisAchat)||0

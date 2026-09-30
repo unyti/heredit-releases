@@ -1,5 +1,13 @@
 # CHANGELOG — Heredit
 
+## v3.14.51 — 2026-09-30
+
+### P&L séparé partout
+- **Cartes du portefeuille** : sous le P&L total, « +X € plus-values · +Y € div./int. » (sur tous les filtres de période). Au survol, le détail de la période et du total.
+- **Panneau des mouvements**, **vue tableau**, **en-têtes de catégories** et **tuiles du tableau de bord** : même séparation (affichée ou au survol).
+
+---
+
 ## v3.14.50 — 2026-09-30
 
 ### Dividendes et intérêts comptés dans le patrimoine, une seule fois
