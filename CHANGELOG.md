@@ -1,5 +1,11 @@
 # CHANGELOG — Heredit
 
+## v3.14.55 — 2026-09-30
+
+- **Carte « Liquidités disponibles » supprimée** du portefeuille : les liquidités s'affichent et se modifient uniquement dans la ligne d'en-tête (pastille 💵) ou le bandeau de la catégorie filtrée.
+
+---
+
 ## v3.14.54 — 2026-09-30
 
 ### Liquidités : modification sur la ligne existante

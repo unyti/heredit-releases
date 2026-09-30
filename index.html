@@ -4556,7 +4556,6 @@ function renderInvCards(list) {
       : liqHolders.length === 1 ? liqHolders[0]
       : (!liqHolders.length && usedSubs.length === 1) ? usedSubs[0] : cat
     const liqHeader  = showSubs ? catLiquid : catLiquid + subLiqTotal
-    const liqCard    = liqCardHtml(cat, catLiquid)
 
     html += `<div class="inv-group">
       <div class="inv-group-header" onclick="toggleInvGroup('${gid}')">
@@ -4570,7 +4569,7 @@ function renderInvCards(list) {
         </div>
         <div class="inv-group-toggle" id="${gid}-arrow">▾</div>
       </div>
-      <div class="inv-group-cards" id="${gid}">${liqCard}${innerHtml}</div>
+      <div class="inv-group-cards" id="${gid}">${innerHtml}</div>
     </div>`
 
   }
@@ -7444,21 +7443,6 @@ function saveLiqModal() {
   c.liquidites = v > 0 ? Math.round(v * 100) / 100 : undefined
   persist(); closeLiqModal(); refreshCurrentPage()
   toast('Liquidités ' + c.label + ' : ' + fmt(v, 2))
-}
-function liqCardHtml(c, montant) {
-  if (!(montant > 0)) return ''
-  return '<div class="inv-card" style="opacity:.85">'
-    + '<div class="inv-card-bar" style="background:var(--muted2)"></div>'
-    + '<div class="inv-card-id" style="flex:1;border-right:1px solid var(--border)">'
-    +   '<div class="inv-card-name" style="color:var(--muted)">💵 Liquidités disponibles</div>'
-    +   '<div class="inv-card-meta"><span style="font-size:10px;color:var(--muted2)">Cash non investi · ' + esc(c.label) + '</span></div>'
-    + '</div>'
-    + '<div class="inv-card-vals" style="border-right:none">'
-    +   '<div class="inv-val-lbl" style="margin-bottom:3px">Montant</div>'
-    +   '<div style="font-family:monospace;font-size:16px;font-weight:700;color:var(--muted)" class="blur-num">' + fmt(montant,2) + '</div>'
-    + '</div>'
-    + '<div style="display:flex;align-items:center;padding:0 12px"><button class="btn btn-ghost btn-sm" onclick="openLiqModal(\''+c.id+'\',event)">✏️ Modifier</button></div>'
-    + '</div>'
 }
 function liqChip(c, montant) {
   return montant > 0
