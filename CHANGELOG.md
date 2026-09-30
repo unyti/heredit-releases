@@ -1,5 +1,16 @@
 # CHANGELOG — Heredit
 
+## v3.14.52 — 2026-09-30
+
+### Corrections
+- **Achat payé avec les liquidités** : les frais saisis avec l'achat sont maintenant aussi retirés des liquidités (achat de 200 € + 2,50 € de frais = −202,50 €). Pour une vente versée aux liquidités, les frais sont déduits du montant versé. La suppression d'un mouvement rend exactement ce qui avait été pris.
+- **Liquidités modifiables avec un filtre de catégorie** : dans le portefeuille filtré sur une catégorie ou une sous-catégorie, la carte « Liquidités disponibles » et la pastille 💵 du bandeau sont affichées et modifiables.
+
+### Cartes du portefeuille
+- **P&L plus sobre** : le P&L de la période, puis deux petites lignes alignées sous un filet — « Total » et « dont dividendes » (ou « dont intérêts »). Le détail plus-values / revenus reste au survol.
+
+---
+
 ## v3.14.51 — 2026-09-30
 
 ### P&L séparé partout

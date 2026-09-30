@@ -3096,12 +3096,17 @@ function plDecomposeHtml(d) {
   return '<span style="color:'+(d.valeur>=0?'var(--green)':'var(--red)')+'">'+sg(d.valeur)+fmt(d.valeur)+'</span> plus-values'
     + ' \u00b7 <span style="color:var(--gold)">'+sg(d.revenus)+fmt(d.revenus)+'</span> div. & int.'
 }
-function plSplitLignes(d) {
-  if (!d.revenus) return ''
-  const sg = v => (v >= 0 ? '+' : '')
-  return '<div style="font-size:10px;color:var(--muted2);margin-top:2px;white-space:nowrap">'
-    + '<span class="blur-num" style="color:'+(d.valeur>=0?'var(--green)':'var(--red)')+'">'+sg(d.valeur)+fmt(d.valeur,0)+'</span> plus-values · '
-    + '<span class="blur-num" style="color:var(--gold)">'+sg(d.revenus)+fmt(d.revenus,0)+'</span> div./int.</div>'
+// Petites lignes « libellé … montant » sous le P&L d'une carte (sobre, alignées)
+function plMiniLignes(rows) {
+  rows = rows.filter(Boolean)
+  if (!rows.length) return ''
+  return '<div style="margin-top:7px;padding-top:6px;border-top:1px solid var(--border);display:grid;grid-template-columns:auto auto;column-gap:10px;row-gap:1px;font-size:10.5px;justify-content:start">'
+    + rows.map(r => '<span style="color:var(--muted2)">'+r.l+'</span><span class="blur-num" style="font-family:DM Mono,monospace;text-align:right;color:'+r.c+'">'+r.v+'</span>').join('')
+    + '</div>'
+}
+function revLabel(inv) {
+  const t = new Set(getMvts(inv.id).map(m => m.type))
+  return t.has('dividende') ? 'dont dividendes' : t.has('interets') ? 'dont intérêts' : 'dont revenus'
 }
 function plDecomposeTitle(d) {
   const sg = v => (v >= 0 ? '+' : '')
@@ -4450,7 +4455,12 @@ function renderInvCards(list) {
     const filtTotalVal = list.reduce((s,i) => s + valeurPatrimoine(i), 0) + filtTotalLiq
     const filtTotalPl  = list.reduce((s,i) => { const p=plForPeriod(i,invPeriod); return s+(p.canPeriod?p.pl:0) }, 0)
 
-    const html = buildInvCardGroup(list)
+    // Liquidités de la catégorie filtrée (et de ses sous-catégories) : cartes modifiables en tête
+    const liqCats  = filteredCat ? [filteredCat, ...(!filteredCat.parentId ? subCats(filteredCat.id) : [])] : []
+    const holders  = liqCats.filter(c => (Number(c.liquidites)||0) > 0)
+    const usedSubsF = (filteredCat && !filteredCat.parentId) ? subCats(filteredCat.id).filter(sc => list.some(i => i.subcat === sc.id)) : []
+    const liqCibleF = holders.length === 1 ? holders[0] : (!holders.length && usedSubsF.length === 1 ? usedSubsF[0] : filteredCat)
+    const html = liqCats.map(c => liqCardHtml(c, Number(c.liquidites)||0)).join('') + buildInvCardGroup(list)
     // Bandeau résumé avec liquidités incluses
     const summaryEl = document.getElementById('inv-summary')
     if (summaryEl && filteredCat) {
@@ -4462,7 +4472,7 @@ function renderInvCards(list) {
         '<span style="color:var(--muted);flex:0 0 auto">'+filteredCat.icon+' '+filteredCat.label+'</span>'
         + '<span style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></span>'
         + '<span style="color:var(--muted)">Valeur&nbsp;</span><span class="mono blur-num">'+fmt(filtTotalVal,2)+'</span>'
-        + (filtTotalLiq>0 ? '<span style="color:var(--muted)">dont 💵&nbsp;</span><span class="mono blur-num" style="color:var(--muted)">'+fmt(filtTotalLiq,0)+'</span>' : '')
+        + (liqCibleF ? liqChip(liqCibleF, filtTotalLiq) : '')
         + '<span style="color:var(--muted)">P&L&nbsp;</span>'
         + '<span class="mono blur-num" style="color:'+plColor+'">'+(filtTotalPl>=0?'+':'')+fmt(filtTotalPl,2)+'</span>'
         + '<span class="mono" style="color:'+plColor+';font-weight:600">'+pctStr+'</span>'
@@ -4780,7 +4790,7 @@ function buildInvCardGroup(list) {
           const plCapVal  = (plCapPos?'+':'')+fmt(plCap,2)
           const plCapPct  = pctOf(plCap, sTotal.investi || sTotal.capitalNet)
           const decT      = plDecompose([i], 'total')
-          const revHtml   = plSplitLignes(decT)
+          const revHtml   = plMiniLignes([decT.revenus ? { l:revLabel(i), v:'+'+fmt(decT.revenus,0), c:'var(--gold)' } : null])
           return '<div class="inv-card-pl" title="'+plDecomposeTitle(decT)+'">'
             + '<div class="inv-pl-lbl">P&L total</div>'
             + '<div class="inv-pl-val blur-num" style="color:'+plCapCol+'">'+plCapVal+'</div>'
@@ -4795,8 +4805,9 @@ function buildInvCardGroup(list) {
           const plTotPos  = plTot >= 0
           const decT      = plDecompose([i], 'total')
           const decP      = plDecompose([i], invPeriod)
-          const totHtml   = '<div style="font-size:10px;color:var(--muted2);margin-top:2px">Total : <span class="blur-num" style="color:'+(plTotPos?'var(--green)':'var(--red)')+'">'+((plTotPos?'+':'')+fmt(plTot,2))+'</span></div>'
-            + plSplitLignes(decT)
+          const totHtml   = plMiniLignes([
+            { l:'Total', v:(plTotPos?'+':'')+fmt(plTot,0), c:plTotPos?'var(--green)':'var(--red)' },
+            decT.revenus ? { l:revLabel(i), v:'+'+fmt(decT.revenus,0), c:'var(--gold)' } : null ])
           return '<div class="inv-card-pl" title="'+(p.canPeriod ? 'P&L '+periodLabel+'&#10;'+plDecomposeTitle(decP)+'&#10;&#10;' : '')+'P&L total&#10;'+plDecomposeTitle(decT)+'">'
             + '<div class="inv-pl-lbl">P&L '+periodLabel+'</div>'
             + '<div class="inv-pl-val blur-num" style="color:'+plColor+'">'+plVal+'</div>'
@@ -5068,7 +5079,7 @@ function onMvtTypeChangeLiq() {
   const hint = document.getElementById('mvt-f-liq-hint')
   if (lbl)  lbl.textContent  = sens < 0 ? 'Payé avec les liquidités de l’enveloppe' : 'Verser aux liquidités de l’enveloppe'
   if (hint) hint.textContent = sens < 0
-    ? 'Les liquidités seront diminuées du montant : l’argent passe des espèces au placement, il n’est pas compté deux fois.'
+    ? 'Les liquidités seront diminuées du montant et des frais : l’argent passe des espèces au placement, il n’est pas compté deux fois.'
     : 'Les liquidités seront augmentées du montant : l’argent reçu reste compté dans le patrimoine.'
   if (chk && !mvtEditId) {
     const cible = inv0 ? DB.categories.find(c => c.id === (inv0.subcat || inv0.cat)) : null
@@ -5164,7 +5175,7 @@ function renderMvtPanel() {
     + '<div class="mvt-kpi"><div class="mvt-kpi-lbl">Capital</div><div class="mvt-kpi-val blur-num">'+fmt(s.capitalNet,0)+'</div><div class="mvt-kpi-sub">'+kpiSub+'</div></div>'
     + '<div class="mvt-kpi"><div class="mvt-kpi-lbl">Valeur actuelle</div><div class="mvt-kpi-val blur-num" style="color:var(--blue)">'+fmt(s.valeur,2)+'</div>'+echSub+'</div>'
     + (()=>{ const d = plDecompose([inv], 'total')
-        return '<div class="mvt-kpi" title="'+plDecomposeTitle(d)+'"><div class="mvt-kpi-lbl">P&amp;L</div><div class="mvt-kpi-val blur-num" style="color:'+plColor+'">'+(plVal>=0?'+':'')+fmt(plVal,2)+'</div><div class="mvt-kpi-sub" style="color:'+plColor+'">'+(plVal>=0?'+':'')+plPct+'</div>'+plSplitLignes(d)+'</div>' })()
+        return '<div class="mvt-kpi" title="'+plDecomposeTitle(d)+'"><div class="mvt-kpi-lbl">P&amp;L</div><div class="mvt-kpi-val blur-num" style="color:'+plColor+'">'+(plVal>=0?'+':'')+fmt(plVal,2)+'</div><div class="mvt-kpi-sub" style="color:'+plColor+'">'+(plVal>=0?'+':'')+plPct+(d.revenus ? ' <span style="color:var(--gold)">· dont '+fmt(d.revenus,0)+' div.</span>' : '')+'</div></div>' })()
     + '</div>'
 
   const fraisAchatMontant = Number(inv.fraisAchat)||0
@@ -5514,7 +5525,7 @@ function addMvt() {
         const chkL = document.getElementById('mvt-f-addliq'), catL = document.getElementById('mvt-f-liq-cat')?.value
         const wrapL = document.getElementById('mvt-f-liq-wrap')
         if (chkL?.checked && catL && wrapL && wrapL.style.display !== 'none' && liqSens(type) && montant > 0) {
-          const d = liqAppliquer(catL, liqSens(type) * montant)
+          const d = liqAppliquer(catL, liqSens(type) * montant - frais)   // frais payés en espèces : achat + frais, vente − frais
           if (d) { updated.liqCat = catL; updated.liqDelta = d }
         }
       }
@@ -5589,7 +5600,7 @@ function addMvt() {
   const liqCatId = document.getElementById('mvt-f-liq-cat')?.value
   let liqApplique = 0
   if (addToLiq && liqCatId && montant > 0 && liqSens(type)) {
-    liqApplique = liqAppliquer(liqCatId, liqSens(type) * montant)
+    liqApplique = liqAppliquer(liqCatId, liqSens(type) * montant - frais)   // frais payés en espèces : achat + frais, vente − frais
     if (liqApplique) { mvtData.liqCat = liqCatId; mvtData.liqDelta = liqApplique }
   }
   persist()
