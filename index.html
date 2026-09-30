@@ -4464,7 +4464,7 @@ function renderInvCards(list) {
     const holders  = liqCats.filter(c => (Number(c.liquidites)||0) > 0)
     const usedSubsF = (filteredCat && !filteredCat.parentId) ? subCats(filteredCat.id).filter(sc => list.some(i => i.subcat === sc.id)) : []
     const liqCibleF = holders.length === 1 ? holders[0] : (!holders.length && usedSubsF.length === 1 ? usedSubsF[0] : filteredCat)
-    const html = liqCats.map(c => liqCardHtml(c, Number(c.liquidites)||0)).join('') + buildInvCardGroup(list)
+    const html = buildInvCardGroup(list)
     // Bandeau résumé avec liquidités incluses
     const summaryEl = document.getElementById('inv-summary')
     if (summaryEl && filteredCat) {
@@ -4476,7 +4476,8 @@ function renderInvCards(list) {
         '<span style="color:var(--muted);flex:0 0 auto">'+filteredCat.icon+' '+filteredCat.label+'</span>'
         + '<span style="width:1px;height:14px;background:var(--border2);flex-shrink:0"></span>'
         + '<span style="color:var(--muted)">Valeur&nbsp;</span><span class="mono blur-num">'+fmt(filtTotalVal,2)+'</span>'
-        + (liqCibleF ? liqChip(liqCibleF, filtTotalLiq) : '')
+        + (liqCibleF ? '<span class="liq-chip" style="font-size:12px" title="Cliquer pour modifier les liquidités" onclick="openLiqModal(\''+liqCibleF.id+'\',event)">'
+            + (filtTotalLiq > 0 ? '<span style="color:var(--muted)">dont 💵&nbsp;</span><span class="mono blur-num">'+fmt(filtTotalLiq,0)+'</span> ✏️' : '💵 + liquidités') + '</span>' : '')
         + '<span style="color:var(--muted)">P&L&nbsp;</span>'
         + '<span class="mono blur-num" style="color:'+plColor+'">'+(filtTotalPl>=0?'+':'')+fmt(filtTotalPl,2)+'</span>'
         + '<span class="mono" style="color:'+plColor+';font-weight:600">'+pctStr+'</span>'
@@ -4533,7 +4534,7 @@ function renderInvCards(list) {
             </div>
             <span id="${sgid}-arrow" style="font-size:10px;color:var(--muted2);margin-left:4px">▾</span>
           </div>
-          <div class="inv-subgroup-cards" id="${sgid}">${liqCardHtml(sc, scLiq)}${buildInvCardGroup(scItems)}</div>
+          <div class="inv-subgroup-cards" id="${sgid}">${buildInvCardGroup(scItems)}</div>
         </div>`
       }
       if (noSub.length) {
@@ -4555,8 +4556,7 @@ function renderInvCards(list) {
       : liqHolders.length === 1 ? liqHolders[0]
       : (!liqHolders.length && usedSubs.length === 1) ? usedSubs[0] : cat
     const liqHeader  = showSubs ? catLiquid : catLiquid + subLiqTotal
-    const liqCard    = showSubs ? liqCardHtml(cat, catLiquid)
-      : [cat, ...subCats(cat.id)].map(c => liqCardHtml(c, Number(c.liquidites)||0)).join('')
+    const liqCard    = liqCardHtml(cat, catLiquid)
 
     html += `<div class="inv-group">
       <div class="inv-group-header" onclick="toggleInvGroup('${gid}')">

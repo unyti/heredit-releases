@@ -1,5 +1,12 @@
 # CHANGELOG — Heredit
 
+## v3.14.54 — 2026-09-30
+
+### Liquidités : modification sur la ligne existante
+- Plus de carte « Liquidités » ajoutée en vue filtrée ni pour les sous-catégories : on modifie les liquidités directement là où elles s'affichaient déjà — le « dont 💵 » du bandeau quand un filtre de catégorie est actif, la pastille 💵 des en-têtes de catégorie sinon (clic → saisie du montant).
+
+---
+
 ## v3.14.53 — 2026-09-30
 
 ### P&L hors dividendes, dividendes à part (comme chez un courtier)
