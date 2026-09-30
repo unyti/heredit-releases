@@ -1,5 +1,15 @@
 # CHANGELOG — Heredit
 
+## v3.14.50 — 2026-09-30
+
+### Dividendes et intérêts comptés dans le patrimoine, une seule fois
+- **Versés aux liquidités par défaut** : un dividende, des intérêts, un bonus ou une vente s'ajoutent aux liquidités de l'enveloppe (case cochée d'office, modifiable). L'argent reçu reste donc compté dans le patrimoine. Pour un livret, l'option est masquée : ses intérêts sont déjà dans sa valeur.
+- **Réinvestissement sans double comptage** : un achat de titres, ou un nouvel investissement, peut être « payé avec les liquidités de l'enveloppe » (coché d'office si les espèces suffisent). Les liquidités baissent d'autant : l'argent passe des espèces au placement.
+- **Réversible** : supprimer ou modifier un mouvement annule ou corrige automatiquement son effet sur les liquidités. Les mouvements déjà saisis ne sont pas modifiés.
+- Retraits et dépôts peuvent aussi être liés aux liquidités (case décochée par défaut).
+
+---
+
 ## v3.14.49 — 2026-09-30
 
 ### P&L : plus-values et dividendes séparés

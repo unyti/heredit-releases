@@ -1406,12 +1406,12 @@ textarea
         <div id="mvt-f-liq-wrap" style="display:none;grid-column:1/-1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
             <input type="checkbox" id="mvt-f-addliq" style="width:14px;height:14px;cursor:pointer">
-            Verser aux liquidités de l'enveloppe
+    <span id="mvt-f-liq-lbl">Verser aux liquidités de l'enveloppe</span>
           </label>
           <div id="mvt-f-liq-cat-wrap" style="display:none;margin-top:8px">
             <label class="fl" style="font-size:11px;margin-bottom:4px">Enveloppe cible</label>
             <select class="fi" id="mvt-f-liq-cat" style="font-size:12px"></select>
-            <div style="font-size:10px;color:var(--muted);margin-top:4px">Les liquidités actuelles seront augmentées du montant saisi.</div>
+            <div id="mvt-f-liq-hint" style="font-size:10px;color:var(--muted);margin-top:4px">Les liquidités actuelles seront augmentées du montant saisi.</div>
           </div>
         </div>
       </div>
@@ -1444,8 +1444,8 @@ textarea
     <div class="modal-sub">Renseignez les informations du placement</div>
     <div class="form-grid">
       <div class="fg form-full"><label class="fl">Nom / Libellé *</label><input class="fi" id="f-nom" placeholder="Ex: Livret A, ETF MSCI World…"></div>
-      <div class="fg"><label class="fl">Catégorie *</label><select class="fi" id="f-cat" onchange="updateSubcatDropdown()"></select></div>
-      <div class="fg"><label class="fl">Sous-catégorie</label><select class="fi" id="f-subcat"><option value="">— Aucune —</option></select></div>
+      <div class="fg"><label class="fl">Catégorie *</label><select class="fi" id="f-cat" onchange="updateSubcatDropdown();refreshPayLiq()"></select></div>
+      <div class="fg"><label class="fl">Sous-catégorie</label><select class="fi" id="f-subcat" onchange="refreshPayLiq()"><option value="">— Aucune —</option></select></div>
       <div class="fg form-full" id="fg-ticker"><label class="fl" id="ticker-label">Code ISIN <span style="color:var(--muted);font-weight:400">(optionnel — cours en temps réel)</span></label><div id="ticker-wrap"><div class="ticker-fetch"><input class="fi" id="f-ticker" placeholder="Ex: FR0000131104 · IE00B4L5Y983 · US0378331005" style="flex:1" oninput="document.getElementById('ticker-info').textContent=''" maxlength="40"><button type="button" class="btn btn-ghost btn-sm" onclick="previewTicker()">Vérifier</button></div><div class="ticker-info" id="ticker-info"></div></div></div>
       <div class="fg" id="fg-quantite"><label class="fl">Nombre de titres / parts</label><input class="fi" id="f-quantite" type="number" min="0" step="0.001" placeholder="Ex: 10" oninput="calcMontantFromPrix()"></div>
 
@@ -1472,7 +1472,7 @@ textarea
         </select>
       </div>
       <div class="fg" id="fg-prix-titre"><label class="fl">Prix par titre (€) <span style="color:var(--muted);font-weight:400">— calcule le montant total</span></label><input class="fi" id="f-prix-titre" type="number" min="0" step="0.01" placeholder="Ex: 27.85" oninput="calcMontantFromPrix()"></div>
-      <div class="fg"><label class="fl">Montant initial (€) *</label><input class="fi" id="f-montant" type="number" min="0" step="1" placeholder="5 000" oninput="syncFraisPreview()"></div>
+      <div class="fg"><label class="fl">Montant initial (€) *</label><input class="fi" id="f-montant" type="number" min="0" step="1" placeholder="5 000" oninput="syncFraisPreview();refreshPayLiq()"></div>
       <div class="fg"><label class="fl">Date d'investissement</label><input class="fi" id="f-date" type="date"></div>
       <div class="fg"><label class="fl">Statut</label><select class="fi" id="f-statut"><option>En cours</option><option>Remboursé</option><option>Défaut</option></select></div>
       <div class="fg" id="fg-fraisachat">
@@ -1486,6 +1486,13 @@ textarea
           </div>
         <div id="frais-preview" style="font-size:10px;color:var(--muted);margin-top:3px"></div>
         </div>
+      <div id="fg-payliq" style="display:none;grid-column:1/-1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:9px 12px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
+          <input type="checkbox" id="f-payliq" onchange="this.dataset.touched='1'" style="width:14px;height:14px;cursor:pointer">
+          <span id="f-payliq-lbl">Payé avec les liquidités</span>
+        </label>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">Cochez si l’achat est réglé avec des espèces déjà dans l’enveloppe (dividendes, ventes…) : elles seront diminuées d’autant, pour ne pas compter cet argent deux fois.</div>
+      </div>
       <div id="inv-adv-toggle" style="grid-column:1/-1;margin:4px 0 0">
         <button type="button" id="inv-adv-btn" onclick="toggleInvAdvanced()" style="background:none;border:none;color:var(--blue);font-size:12px;cursor:pointer;padding:0;display:flex;align-items:center;gap:5px">▼ Options avancées</button>
       </div>
@@ -5042,8 +5049,23 @@ function onMvtTypeChangeLiq() {
   const wrap = document.getElementById('mvt-f-liq-wrap')
   const chk  = document.getElementById('mvt-f-addliq')
   if (!wrap) return
-  const showLiq = ['interets','dividende','bonus'].includes(type)
+  const inv0    = investments().find(i => i.id === mvtInvId)
+  const livret  = inv0 && ['livret','livret_exo'].includes(getCat(inv0.cat).enveloppe)
+  const sens    = liqSens(type)
+  // Livret : les intérêts restent sur le livret (déjà dans sa valeur) → ne pas les verser ailleurs
+  const showLiq = sens !== 0 && !(livret && type === 'interets')
   wrap.style.display = showLiq ? '' : 'none'
+  const lbl  = document.getElementById('mvt-f-liq-lbl')
+  const hint = document.getElementById('mvt-f-liq-hint')
+  if (lbl)  lbl.textContent  = sens < 0 ? 'Payé avec les liquidités de l’enveloppe' : 'Verser aux liquidités de l’enveloppe'
+  if (hint) hint.textContent = sens < 0
+    ? 'Les liquidités seront diminuées du montant : l’argent passe des espèces au placement, il n’est pas compté deux fois.'
+    : 'Les liquidités seront augmentées du montant : l’argent reçu reste compté dans le patrimoine.'
+  if (chk && !mvtEditId) {
+    const cible = inv0 ? DB.categories.find(c => c.id === (inv0.subcat || inv0.cat)) : null
+    chk.checked = showLiq && (sens > 0 ? ['dividende','interets','bonus','vente'].includes(type)
+                                       : (type === 'achat' && (Number(cible?.liquidites)||0) > 0))
+  }
   if (!showLiq && chk) chk.checked = false
   onMvtLiqCheckChange()
   // Champs prolongation
@@ -5061,6 +5083,25 @@ function onMvtTypeChangeLiq() {
   }
 }
 
+// Sens du lien avec les liquidités : +1 l'argent sort du placement vers les espèces, −1 il en vient
+function liqSens(type) {
+  return ['dividende','interets','bonus','vente','retrait'].includes(type) ? 1
+       : ['achat','depot'].includes(type) ? -1 : 0
+}
+// Applique un mouvement de liquidités à une catégorie ; renvoie le montant réellement appliqué
+function liqAppliquer(catId, delta) {
+  const c = DB.categories.find(x => x.id === catId)
+  if (!c || !delta) return 0
+  const avant = Number(c.liquidites) || 0
+  const apres = Math.max(0, Math.round((avant + delta) * 100) / 100)
+  c.liquidites = apres > 0 ? apres : undefined
+  return Math.round((apres - avant) * 100) / 100
+}
+// Annule le lien liquidités d'un mouvement (suppression ou modification)
+function liqAnnuler(mvt) {
+  if (mvt && mvt.liqCat && mvt.liqDelta) liqAppliquer(mvt.liqCat, -mvt.liqDelta)
+}
+
 function onMvtLiqCheckChange() {
   const chk     = document.getElementById('mvt-f-addliq')
   const catWrap = document.getElementById('mvt-f-liq-cat-wrap')
@@ -5068,6 +5109,7 @@ function onMvtLiqCheckChange() {
   if (!catWrap || !catSel) return
   const checked = chk?.checked
   catWrap.style.display = checked ? '' : 'none'
+  const selPrec = catSel.value
   if (checked) {
     const inv    = investments().find(i => i.id === mvtInvId)
     const allCats = DB.categories.slice().sort((a,b) => {
@@ -5080,8 +5122,9 @@ function onMvtLiqCheckChange() {
     catSel.innerHTML = allCats.map(c => {
       const cur = Number(c.liquidites)||0
       const sel = (inv?.subcat ? c.id === inv.subcat : c.id === inv?.cat) ? ' selected' : ''
-      return '<option value="'+c.id+'"'+sel+'>'+c.icon+' '+c.label+' ('+cur.toLocaleString('fr-FR')+'€ actuels)</option>'
+      return '<option value="'+c.id+'"'+sel+'>'+c.icon+' '+c.label+' ('+fmt(cur,2)+' actuels)</option>'
     }).join('')
+    if (selPrec && DB.categories.some(c => c.id === selPrec)) catSel.value = selPrec
   }
 }
 
@@ -5207,12 +5250,12 @@ function renderMvtForm(inv) {
 <div id="mvt-f-liq-wrap" style="display:none;grid-column:1/-1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px">
   <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
     <input type="checkbox" id="mvt-f-addliq" onchange="onMvtLiqCheckChange()" style="width:14px;height:14px;cursor:pointer">
-    Verser aux liquidités de l'enveloppe
+    <span id="mvt-f-liq-lbl">Verser aux liquidités de l'enveloppe</span>
   </label>
   <div id="mvt-f-liq-cat-wrap" style="display:none;margin-top:8px">
     <label class="fl" style="font-size:11px;margin-bottom:4px">Enveloppe cible</label>
     <select class="fi" id="mvt-f-liq-cat" style="font-size:12px"></select>
-    <div style="font-size:10px;color:var(--muted);margin-top:4px">Les liquidités actuelles seront augmentées du montant saisi.</div>
+    <div id="mvt-f-liq-hint" style="font-size:10px;color:var(--muted);margin-top:4px">Les liquidités actuelles seront augmentées du montant saisi.</div>
   </div>
 
 
@@ -5243,12 +5286,12 @@ function renderMvtForm(inv) {
 <div id="mvt-f-liq-wrap" style="display:none;grid-column:1/-1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:10px 12px">
   <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;font-weight:600">
     <input type="checkbox" id="mvt-f-addliq" onchange="onMvtLiqCheckChange()" style="width:14px;height:14px;cursor:pointer">
-    Verser aux liquidités de l'enveloppe
+    <span id="mvt-f-liq-lbl">Verser aux liquidités de l'enveloppe</span>
   </label>
   <div id="mvt-f-liq-cat-wrap" style="display:none;margin-top:8px">
     <label class="fl" style="font-size:11px;margin-bottom:4px">Enveloppe cible</label>
     <select class="fi" id="mvt-f-liq-cat" style="font-size:12px"></select>
-    <div style="font-size:10px;color:var(--muted);margin-top:4px">Les liquidités actuelles seront augmentées du montant saisi.</div>
+    <div id="mvt-f-liq-hint" style="font-size:10px;color:var(--muted);margin-top:4px">Les liquidités actuelles seront augmentées du montant saisi.</div>
   </div>
 </div>
 <div id="mvt-f-prol-wrap" style="display:none;grid-column:1/-1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:12px 14px">
@@ -5401,6 +5444,11 @@ function editMvt(mvtId) {
   }
   if (qteEl && mvt.quantite)    qteEl.value  = mvt.quantite
   if (prixEl && mvt.prixUnitaire) prixEl.value = mvt.prixUnitaire
+  const liqChk = document.getElementById('mvt-f-addliq')
+  if (liqChk) {
+    liqChk.checked = !!mvt.liqCat; onMvtLiqCheckChange()
+    const sel = document.getElementById('mvt-f-liq-cat'); if (sel && mvt.liqCat) sel.value = mvt.liqCat
+  }
   // Mettre à jour le header et le bouton
   const hdr = document.getElementById('mvt-form-hdr')
   if (hdr) hdr.textContent = '✏️ Modifier le mouvement'
@@ -5450,6 +5498,16 @@ function addMvt() {
         setInvestments(investments().map(x => x.id === mvtInvId ? Object.assign({}, x, { quantite: newQte, statut }) : x))
       }
       const updated = { id: mvtEditId, type, montant, date, note }
+      // Liquidités : annuler l'ancien lien, appliquer le nouveau
+      liqAnnuler(old)
+      {
+        const chkL = document.getElementById('mvt-f-addliq'), catL = document.getElementById('mvt-f-liq-cat')?.value
+        const wrapL = document.getElementById('mvt-f-liq-wrap')
+        if (chkL?.checked && catL && wrapL && wrapL.style.display !== 'none' && liqSens(type) && montant > 0) {
+          const d = liqAppliquer(catL, liqSens(type) * montant)
+          if (d) { updated.liqCat = catL; updated.liqDelta = d }
+        }
+      }
       if (qte > 0)  updated.quantite    = qte
       if (prix > 0) updated.prixUnitaire = prix
       if (type === 'prolongation') {
@@ -5516,14 +5574,13 @@ function addMvt() {
   if (frais > 0) {
     DB.mouvements[mvtInvId].push({ id:uid(), type:'fraisachat', montant:frais, date, note:"Frais d'entrée liés au mouvement du "+fmtDate(date) })
   }
-  // ── Option : ajouter aux liquidités d'une catégorie
-  const addToLiq = document.getElementById('mvt-f-addliq')?.checked
+  // ── Option : lier aux liquidités d'une catégorie (versement ou paiement), mémorisé pour pouvoir l'annuler
+  const addToLiq = document.getElementById('mvt-f-addliq')?.checked && document.getElementById('mvt-f-liq-wrap')?.style.display !== 'none'
   const liqCatId = document.getElementById('mvt-f-liq-cat')?.value
-  if (addToLiq && liqCatId && montant > 0) {
-    const cat = DB.categories.find(c => c.id === liqCatId)
-    if (cat) {
-      cat.liquidites = Math.round(((Number(cat.liquidites)||0) + montant) * 100) / 100
-    }
+  let liqApplique = 0
+  if (addToLiq && liqCatId && montant > 0 && liqSens(type)) {
+    liqApplique = liqAppliquer(liqCatId, liqSens(type) * montant)
+    if (liqApplique) { mvtData.liqCat = liqCatId; mvtData.liqDelta = liqApplique }
   }
   persist()
   ;['mvt-f-montant','mvt-f-frais','mvt-f-note','mvt-f-quantite','mvt-f-prix'].forEach(id => {
@@ -5538,7 +5595,7 @@ function addMvt() {
     clearTimeout(tickerRefreshTimer); refreshAllTickers()
   }
   renderMvtPanel()
-  const liqMsg = addToLiq && liqCatId ? ` · +${montant}€ en liquidités` : ''
+  const liqMsg = liqApplique ? ' · liquidités ' + (liqApplique > 0 ? '+' : '−') + fmt(Math.abs(liqApplique), 2) : ''
   toast(frais > 0 ? "Mouvement + frais d'entrée enregistrés" + liqMsg : 'Mouvement enregistré' + liqMsg)
 }
 function deleteMvt(mvtId) {
@@ -5564,6 +5621,8 @@ function _supprimerMvt(mvtId) {
       setInvestments(investments().map(x => x.id === mvtInvId ? Object.assign({}, x, { quantite: newQte, statut }) : x))
     }
   }
+  // Rendre aux liquidités ce que ce mouvement y avait versé ou pris
+  liqAnnuler(mvt)
   // Supprimer aussi les frais créés avec ce mouvement (sinon ils resteraient comptés seuls)
   const fraisOrphelins = (mvt && (mvt.type === 'achat' || mvt.type === 'vente')) ? fraisLiesA(mvts, mvt).map(m => m.id) : []
 
@@ -7162,6 +7221,8 @@ function openModal() {
   document.getElementById('modal-title').textContent='Ajouter un investissement'
   document.getElementById('modal-save').textContent='Ajouter'
   populateCatSelect()
+  const pl = document.getElementById('f-payliq'); if (pl) { pl.checked = false; delete pl.dataset.touched }
+  refreshPayLiq()
   document.getElementById('overlay').classList.add('open')
   setTimeout(()=>document.getElementById('f-nom').focus(),50)
 }
@@ -7199,11 +7260,31 @@ function openEdit(id) {
     if (_ti) _ti.innerHTML = i.ticker&&i.prixUnitaire ? '<span style="color:var(--green)">Dernier cours : '+i.prixUnitaire.toLocaleString('fr-FR',_F2)+' €/titre'+(i.resolvedTicker?' · Ticker : '+i.resolvedTicker:'')+'</span>' : ''
     document.getElementById('f-subcat').value = i.subcat||''
   }, 20)
+  refreshPayLiq()
   document.getElementById('modal-title').textContent  = "Modifier l'investissement"
   document.getElementById('modal-save').textContent   = 'Enregistrer'
   document.getElementById('overlay').classList.add('open')
 }
 function closeModal() { document.getElementById('overlay').classList.remove('open'); editInvId=null }
+
+// Nouvel investissement réglé avec les espèces de l'enveloppe : on les diminue (pas de double comptage)
+function payLiqCible() {
+  const ids = [document.getElementById('f-subcat')?.value, document.getElementById('f-cat')?.value].filter(Boolean)
+  return ids.map(id => DB.categories.find(c => c.id === id)).find(c => c && (Number(c.liquidites)||0) > 0) || null
+}
+function refreshPayLiq() {
+  const wrap = document.getElementById('fg-payliq'), chk = document.getElementById('f-payliq')
+  if (!wrap || !chk) return
+  const c = editInvId ? null : payLiqCible()
+  wrap.style.display = c ? '' : 'none'
+  if (!c) { chk.checked = false; return }
+  const dispo = Number(c.liquidites) || 0
+  document.getElementById('f-payliq-lbl').textContent = 'Payé avec les liquidités de ' + c.label + ' (' + fmt(dispo, 2) + ' disponibles)'
+  if (chk.dataset.touched !== '1') {
+    const m = parseFloat(document.getElementById('f-montant')?.value) || 0
+    chk.checked = m > 0 && m <= dispo + 0.01
+  }
+}
 
 function syncFraisPreview() {
   const val   = parseFloat(document.getElementById('f-fraisachat').value) || 0
@@ -7270,10 +7351,16 @@ function saveInv() {
     lastTickerUpdate: prevInv&&prevInv.lastTickerUpdate&&prevInv.ticker===ticker ? prevInv.lastTickerUpdate : undefined,
   }
   const inv = investments()
+  let liqMsg = ''
+  if (!editInvId && document.getElementById('f-payliq')?.checked) {
+    const c = payLiqCible()
+    const d = c ? liqAppliquer(c.id, -(montant + (entry.fraisAchat || 0))) : 0
+    if (d) { entry.liqCat = c.id; entry.liqDelta = d; liqMsg = ' · liquidités ' + c.label + ' −' + fmt(-d, 2) }
+  }
   if (editInvId) setInvestments(inv.map(x=>x.id===editInvId?entry:x))
   else           setInvestments([entry,...inv])
   persist(); closeModal(); renderSidebarCats()
-  toast(editInvId ? 'Investissement modifié' : ('Investissement ajouté' + (ticker&&quantite>0 ? ' — cours en cours de récupération…' : '')))
+  toast(editInvId ? 'Investissement modifié' : ('Investissement ajouté' + liqMsg + (ticker&&quantite>0 ? ' — cours en cours de récupération…' : '')))
   refreshCurrentPage()
   if (ticker && quantite > 0) {
     if (tickerRefreshTimer) clearTimeout(tickerRefreshTimer)
