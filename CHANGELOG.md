@@ -1,5 +1,15 @@
 # CHANGELOG — Heredit
 
+## v3.14.53 — 2026-09-30
+
+### P&L hors dividendes, dividendes à part (comme chez un courtier)
+- **Le P&L n'inclut plus les dividendes** : il mesure la plus ou moins-value (cours, ventes, frais). Les dividendes reçus sont affichés à part, en or : ligne « Dividendes » sur les cartes, dans le panneau des mouvements, sous le P&L du tableau de bord et d'Analyses, et « Div. » dans la vue tableau.
+- Vaut pour toutes les périodes (1J… Tout), les totaux de catégories, les tuiles, le classement et le tri par P&L.
+- **Intérêts et bonus** (crowdfunding, livrets…) restent dans le P&L : c'est le rendement de ces placements.
+- Au survol : P&L hors dividendes, dividendes reçus, et gain total dividendes compris. « Revenus perçus », « Gains & pertes réalisés » et le capital investi ne changent pas.
+
+---
+
 ## v3.14.52 — 2026-09-30
 
 ### Corrections
